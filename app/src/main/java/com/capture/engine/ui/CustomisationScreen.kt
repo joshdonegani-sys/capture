@@ -176,6 +176,12 @@ fun CustomisationScreen(
 
                         // Input Selection Row
                         Row(
+                            modifier = Modifier.padding(
+                                start = if (showDragHandle) 4.dp else 8.dp,
+                                end = if (contextDisplayMode == "menu") 4.dp else 8.dp,
+                                top = 2.dp,
+                                bottom = 2.dp
+                            ),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
@@ -233,7 +239,7 @@ fun CustomisationScreen(
                                     imageVector = previewIcon,
                                     contentDescription = null,
                                     modifier = Modifier.size(buttonSize).padding(6.dp),
-                                    tint = previewColors.activeContentColor
+                                    tint = previewColors.contentColor
                                 )
                             }
 

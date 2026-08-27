@@ -139,7 +139,7 @@ class OverlayManager private constructor(private val context: Context) {
                                 val w = toolbarView?.width ?: 0
                                 val h = toolbarView?.height ?: 0
                                 val maxX = (dm.widthPixels - w).coerceAtLeast(0)
-                                val maxY = (dm.heightPixels - h).coerceAtLeast(0)
+                                val maxY = (dm.heightPixels - h - 70).coerceAtLeast(0)
                                 params.x = (params.x + dx.toInt()).coerceIn(0, maxX)
                                 params.y = (params.y + dy.toInt()).coerceIn(0, maxY)
                                 windowManager.updateViewLayout(this@apply, params)

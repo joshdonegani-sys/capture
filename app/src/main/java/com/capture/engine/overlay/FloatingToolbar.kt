@@ -193,7 +193,7 @@ fun FloatingToolbar(
                         onDrag(dragAmount.x, dragAmount.y)
                     }
                 },
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.TopStart
         ) {
             val hasActiveContext = screenGrab || appTree || highlightedText || media || pointActive || activeSelection != null
 
@@ -264,7 +264,7 @@ fun FloatingToolbar(
                                 onDrag = onDrag,
                                 showMenuToggle = false,
                                 isMenuExpanded = false,
-                                hasActiveContext = false,
+                                hasActiveContext = hasActiveContext,
                                 onMenuToggle = {}
                             )
                         }
@@ -305,7 +305,7 @@ fun FloatingToolbar(
                                 onDrag = onDrag,
                                 showMenuToggle = false,
                                 isMenuExpanded = false,
-                                hasActiveContext = false,
+                                hasActiveContext = hasActiveContext,
                                 onMenuToggle = {}
                             )
                             HorizontalDivider(
@@ -343,11 +343,46 @@ fun FloatingToolbar(
                     }
                 }
                 else -> {
-                    // Default "menu" mode: Collapsible flyout above main toolbar with hamburger toggle
+                    // Default "menu" mode: Main bar anchored at top-start, flyout menu drops down below without moving the main bar
                     Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                        horizontalAlignment = Alignment.Start,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // Main Floating Bar: Input Selection + Menu Toggle (FIRST, perfectly stationary)
+                        Surface(
+                            shape = RoundedCornerShape(28.dp),
+                            color = colors.containerColor,
+                            tonalElevation = 6.dp,
+                            shadowElevation = 8.dp,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                        ) {
+                            InputSelectionRow(
+                                displayMode = displayMode,
+                                visibleInputIcons = visibleInputIcons,
+                                isLastUsedExpanded = isLastUsedExpanded,
+                                lastUsedInput = lastUsedInput,
+                                showDragHandle = showDragHandle,
+                                buttonSize = buttonSize,
+                                iconSizeDp = iconSizeDp,
+                                dividerHeight = dividerHeight,
+                                contentColor = colors.contentColor,
+                                activeContainerColor = colors.activeContainerColor,
+                                activeContentColor = colors.activeContentColor,
+                                onInputSelected = { type ->
+                                    settings.lastUsedInputType = type
+                                    isLastUsedExpanded = false
+                                    onInputSelected(type)
+                                },
+                                onLastUsedExpandToggle = { isLastUsedExpanded = !isLastUsedExpanded },
+                                onDrag = onDrag,
+                                showMenuToggle = true,
+                                isMenuExpanded = isMenuExpanded,
+                                hasActiveContext = hasActiveContext,
+                                onMenuToggle = { isMenuExpanded = !isMenuExpanded }
+                            )
+                        }
+
+                        // Flyout Menu: Context Controls & Sources (Drops down directly below main bar)
                         AnimatedVisibility(
                             visible = isMenuExpanded,
                             enter = fadeIn() + expandVertically(),
@@ -359,7 +394,7 @@ fun FloatingToolbar(
                                 tonalElevation = 8.dp,
                                 shadowElevation = 8.dp,
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
-                                modifier = Modifier.padding(bottom = 2.dp)
+                                modifier = Modifier.padding(top = 2.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
@@ -394,40 +429,6 @@ fun FloatingToolbar(
                                     )
                                 }
                             }
-                        }
-
-                        // Main Floating Bar: Input Selection + Menu Toggle
-                        Surface(
-                            shape = RoundedCornerShape(28.dp),
-                            color = colors.containerColor,
-                            tonalElevation = 6.dp,
-                            shadowElevation = 8.dp,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                        ) {
-                            InputSelectionRow(
-                                displayMode = displayMode,
-                                visibleInputIcons = visibleInputIcons,
-                                isLastUsedExpanded = isLastUsedExpanded,
-                                lastUsedInput = lastUsedInput,
-                                showDragHandle = showDragHandle,
-                                buttonSize = buttonSize,
-                                iconSizeDp = iconSizeDp,
-                                dividerHeight = dividerHeight,
-                                contentColor = colors.contentColor,
-                                activeContainerColor = colors.activeContainerColor,
-                                activeContentColor = colors.activeContentColor,
-                                onInputSelected = { type ->
-                                    settings.lastUsedInputType = type
-                                    isLastUsedExpanded = false
-                                    onInputSelected(type)
-                                },
-                                onLastUsedExpandToggle = { isLastUsedExpanded = !isLastUsedExpanded },
-                                onDrag = onDrag,
-                                showMenuToggle = true,
-                                isMenuExpanded = isMenuExpanded,
-                                hasActiveContext = hasActiveContext,
-                                onMenuToggle = { isMenuExpanded = !isMenuExpanded }
-                            )
                         }
                     }
                 }
@@ -632,24 +633,29 @@ fun InputSelectionRow(
     modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+        modifier = modifier.padding(
+            start = if (showDragHandle) 4.dp else 8.dp,
+            end = if (showMenuToggle) 4.dp else 8.dp,
+            top = 4.dp,
+            bottom = 4.dp
+        ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Leading Drag Zone (retains invisible touch drag zone when visual pill is off)
-        Box(
-            modifier = Modifier
-                .width(if (showDragHandle) 12.dp else 10.dp)
-                .height(dividerHeight)
-                .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        onDrag(dragAmount.x, dragAmount.y)
-                    }
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            if (showDragHandle) {
+        // Optional Leading Drag Handle
+        if (showDragHandle) {
+            Box(
+                modifier = Modifier
+                    .width(12.dp)
+                    .height(dividerHeight)
+                    .pointerInput(Unit) {
+                        detectDragGestures { change, dragAmount ->
+                            change.consume()
+                            onDrag(dragAmount.x, dragAmount.y)
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
                 Surface(
                     modifier = Modifier
                         .width(3.dp)
@@ -734,7 +740,7 @@ fun InputSelectionRow(
                     Icon(
                         imageVector = lastIcon,
                         contentDescription = "$lastDesc (Last Used - Long press to expand)",
-                        tint = activeContentColor,
+                        tint = contentColor,
                         modifier = Modifier.size(iconSizeDp)
                     )
                 }
