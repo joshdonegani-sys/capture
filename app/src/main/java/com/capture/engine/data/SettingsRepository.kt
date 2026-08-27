@@ -88,6 +88,75 @@ class SettingsRepository(context: Context) {
             prefs.edit().putString(KEY_LAST_USED_INPUT, value).apply()
         }
 
+    // 1. Toolbar Color Role & Custom Seed Color
+    private val _toolbarColorRole = MutableStateFlow(prefs.getString(KEY_TOOLBAR_COLOR_ROLE, "surface_container") ?: "surface_container")
+    val toolbarColorRoleFlow: StateFlow<String> = _toolbarColorRole
+
+    var toolbarColorRole: String
+        get() = _toolbarColorRole.value
+        set(value) {
+            _toolbarColorRole.value = value
+            prefs.edit().putString(KEY_TOOLBAR_COLOR_ROLE, value).apply()
+        }
+
+    private val _toolbarCustomSeedColor = MutableStateFlow(prefs.getInt(KEY_TOOLBAR_CUSTOM_SEED, 0xFF6750A4.toInt()))
+    val toolbarCustomSeedColorFlow: StateFlow<Int> = _toolbarCustomSeedColor
+
+    var toolbarCustomSeedColor: Int
+        get() = _toolbarCustomSeedColor.value
+        set(value) {
+            _toolbarCustomSeedColor.value = value
+            prefs.edit().putInt(KEY_TOOLBAR_CUSTOM_SEED, value).apply()
+        }
+
+    // 2. Context Sources Display Mode ("menu", "above", "below")
+    private val _contextSourcesDisplayMode = MutableStateFlow(prefs.getString(KEY_CONTEXT_SOURCES_DISPLAY, "menu") ?: "menu")
+    val contextSourcesDisplayModeFlow: StateFlow<String> = _contextSourcesDisplayMode
+
+    var contextSourcesDisplayMode: String
+        get() = _contextSourcesDisplayMode.value
+        set(value) {
+            _contextSourcesDisplayMode.value = value
+            prefs.edit().putString(KEY_CONTEXT_SOURCES_DISPLAY, value).apply()
+        }
+
+    // 3. Visible Input Icons in "All" mode
+    private val defaultInputIcons = setOf("speech_to_text", "mic_audio", "clipboard_paste", "text_snippet")
+    private val _visibleInputIcons = MutableStateFlow(prefs.getStringSet(KEY_VISIBLE_INPUT_ICONS, defaultInputIcons) ?: defaultInputIcons)
+    val visibleInputIconsFlow: StateFlow<Set<String>> = _visibleInputIcons
+
+    var visibleInputIcons: Set<String>
+        get() = _visibleInputIcons.value
+        set(value) {
+            _visibleInputIcons.value = value
+            prefs.edit().putStringSet(KEY_VISIBLE_INPUT_ICONS, value).apply()
+        }
+
+    fun toggleInputIconVisibility(iconKey: String) {
+        val current = _visibleInputIcons.value.toMutableSet()
+        if (current.contains(iconKey)) {
+            // Prevent removing the last remaining icon
+            if (current.size > 1) {
+                current.remove(iconKey)
+                visibleInputIcons = current
+            }
+        } else {
+            current.add(iconKey)
+            visibleInputIcons = current
+        }
+    }
+
+    // 4. Display Drag Handle Toggle
+    private val _showDragHandle = MutableStateFlow(prefs.getBoolean(KEY_SHOW_DRAG_HANDLE, true))
+    val showDragHandleFlow: StateFlow<Boolean> = _showDragHandle
+
+    var showDragHandle: Boolean
+        get() = _showDragHandle.value
+        set(value) {
+            _showDragHandle.value = value
+            prefs.edit().putBoolean(KEY_SHOW_DRAG_HANDLE, value).apply()
+        }
+
     companion object {
         private const val KEY_WEBHOOK_URL = "webhook_url"
         private const val KEY_API_KEY = "api_key"
@@ -103,5 +172,11 @@ class SettingsRepository(context: Context) {
         private const val KEY_TOOLBAR_ALPHA = "toolbar_alpha"
         private const val KEY_INPUT_SELECTION_MODE = "input_selection_mode"
         private const val KEY_LAST_USED_INPUT = "last_used_input"
+
+        private const val KEY_TOOLBAR_COLOR_ROLE = "toolbar_color_role"
+        private const val KEY_TOOLBAR_CUSTOM_SEED = "toolbar_custom_seed"
+        private const val KEY_CONTEXT_SOURCES_DISPLAY = "context_sources_display"
+        private const val KEY_VISIBLE_INPUT_ICONS = "visible_input_icons"
+        private const val KEY_SHOW_DRAG_HANDLE = "show_drag_handle"
     }
 }

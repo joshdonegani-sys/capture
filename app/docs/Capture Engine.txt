@@ -131,14 +131,21 @@ Real-time event logger with status indicators (Sending, Success, Error).
 ### Toolbar settings
 Size: slider for icon size, therefore also controlling overall toolbar size
 Transparency: slider
+Colour:
 
 Input Selection Display:
 * All  - toolbar always shows all Input Selection items
 * Last used - toolbar shows a single icon, that of the latest Input Selection item that has been used. Tapping it triggers that icon's action. Long-pressing it expands the toolbar to show all the Input Selection icons.
 
-If input "All", allow the user to customise which items appear
+Context Sources Display:
+* Menu
+* Above (on a single line above the Input Selection icons. No divider or menu icon shown for Input Selection)
+* Below (on a single line above the Input Selection icons. No divider or menu icon shown for Input Selection)
 
-Display drag handle 
+If input selection display = "All", give the user the ability to choose which input icons are displayed
+
+Display drag handle: on or off
+
 
 
 ## Settings  (icon: `settings`)
