@@ -1,0 +1,151 @@
+# App Purpose
+A native Android context-capture utility and AI agent pipeline designed to capture on-screen data and user inputs from anywhere in the OS and pipe them directly into a webhook (which will likely be processed by an AI agent at the other end).
+
+
+# Core Architecture & Permissions
+The engine relies on standard Android framework capabilities, avoiding root or ADB workarounds to maintain device stability.
+
+AccessibilityService: Parses the semantic UI tree, extracts bounding boxes, and reads active text selections without needing manual clipboard actions.
+
+MediaProjection: Captures raw pixel buffers. The standard system permission prompt will be accepted manually upon initialization.
+
+NotificationListenerService: Hooks into the Android MediaSessionManager to passively extract active podcast metadata and exact playback timestamps.
+
+
+## Floating Toolbar Overlay
+A persistent system alert window manages capture configurations using strict state logic to prevent overlay clutter. These are icon only buttons, using Google Material Icons.
+
+## Toolbar states
+
+Toolbar collapsed state: a thin semi-transparent horizontal bar. Renders as an unobtrusive, semi-transparent horizontal bar that can be dragged anywhere on screen.
+Toolbar expanded state: a compact M3 Expressive floating icon bar featuring direct input selection icons, followed by a hamburger menu icon that toggles an elevated flyout menu containing context controls and sources.
+
+
+### Input Selection
+* icon: `RecordVoiceOver`. label: "Dictate"
+* icon: `Mic`. label: "Record"
+* icon: `Content Paste`. label: "Paste"
+* icon: `Keyboard`. label: "Type"
+
+These launch the Input Popop with the corresponding tab active.
+"Paste" launches a standard the Input Popup with the "Text" tab active and the content of the paste prepopulating the textbox.
+
+Then a hamburger menu icon (`Menu`) toggles an elevated flyout menu containing the following 2 groups:
+
+### Context Sources Control
+* icon: `Mobile Friendly`. label: "All"
+* icon: `Block`. label: "None"
+* icon: `Ads Click`. label: "Point"
+
+"All" and "None" are action buttons. Tapping them toggles the relevant sources in the other group.
+
+"Point" is a toggle button.
+Tapping "Point" whilst it is inactive, enters "Point" mode.
+In Point mode, the toolbar turns transparent. a transparent overlay for tap or drag-to-select targeting.
+After the payload successfully fires, the context state automatically resets to "All" for the next capture. Tapping the point button when it is not active launches the selector, to allow the user to make a selection via ray casting (which under the hood means that a cropped screenshot image and a filtered app tree). The user can select via a tap, or via a click and drag; doing this makes a selection active. If a selection is active (i.e. a crop for the screenshot + filtered target for app tree, this button appears active. Tapping the button when it is active (i.e. when there is a selection), removes the selection.
+
+### Context Sources
+* icon: `Screenshot`. label: "Screenshot" (i.)
+* icon: `App Shortcut`. label: "App" (i.e. the app tree)
+* icon: `Short Text`. label: "Highlighted Text"
+* icon: `Play Circle`. label: "Media" (i.e. now playing)
+
+
+# Input Popup
+A popup interface dynamically adapts its action controls based on the selected input modality. Tapping a context source from the floating toolbar launches this
+
+Segmented buttons with icons. Used for switching between input types. These buttons do not appear when route is via the floating toolbar.
+* icon: `Speech to Text`. label: "Dictate"
+* icon: `Mic`. label: "Record"
+* icon: `Keyboard`. label: "Type"
+
+Dictate
+ - Android native text transcription. User sees a preview of the text.
+ - Entry area: a small indicator "Listening"/"Paused" at the top; dictated text appears; non-editable.
+ - "Pause" icon button (when listening) changing to "Resume" icon button (when paused)
+ - "Send" icon + label button
+
+Record
+ - Entry area: a small indicator "Recording"/"Paused" at the top left; a timestamp of the recording at the top right; a waveform, animated when recording and static when paused.
+ - "Pause" icon button (when recording) changing to "Resume" icon button (when paused)
+ - "Send" icon button
+
+Type
+  - Entry area: text input. An "Unfold More" and "Unfold Less" icon in the bottom right of the text input toggles a resiz of the input popup to fullscreen 
+  - "Send" icon button
+
+No delete, trash or discard button; any dictated, recorded or typed input is discarded when the drawer is closed. 
+
+
+# System-Wide Entry Points
+Beyond the floating overlay, the capture engine integrates directly into the operating system for frictionless triggering.
+
+Text Highlight Menu: Handled via ACTION_PROCESS_TEXT for extracting selections and enabling bidirectional, inline text replacements.
+
+Share Sheet: ACTION_SEND intent filters catch and route shared URLs, text, and media files directly to the engine.
+
+Both these entry points launch an input modal, displaying the tabs for switching between input types. The default input type is the same as whatever was last used. The context for these is the context provided by the text highlight or the share sheet.
+
+# The engine
+JSON packages are dynamically assembled by the background services right before sending an HTTP POST request to the configured webhook.
+
+The payload is designed to be modular: fields are included or excluded based on the input method used and which context toggles are currently active.
+
+## Ideas for payload structure
+These are IDEAS for inspiration. They cover the sorts of things that might be considered to go in the payload. If there are more effective, better structured, or more useful fields then use those instead.
+
+JSON Field	Data Type	Description
+type	String	The trigger mechanism: "speech_to_text", "mic_audio", "clipboard_paste", "text_snippet", or "share_target".
+timestamp	Long (Epoch ms)	Exact millisecond timestamp when the capture occurred.
+source	String	Origin of the payload: "floating_overlay" or "system_share_sheet".
+package_name	String	The Android package identifier of the active foreground application (e.g. com.android.chrome, com.google.android.youtube, com.twitter.android).
+input_content (Optional)	String	The text content supplied by the user (spoken dictation, clipboard text, or custom text snippet).
+active_context_sources	JSONObject	Booleans representing which context switches were active at capture time: screen_grab, app_tree, highlighted_text, and media.
+media_context (Optional)	JSONObject	Rich metadata extracted when media or browser apps are detected. Includes platform, title, channel_or_artist, canonical url, timestamp, and playback_state.
+highlighted_text (Optional)	String	Content from the currently focused or selected node (AccessibilityNodeInfo.FOCUS_INPUT or FOCUS_ACCESSIBILITY).
+targeted_selection (Optional)	String	Bounding box coordinates if Point/Gesture selection mode was used.
+app_tree_text (Optional)	String	Indented, hierarchical text tree extracted by traversing all AccessibilityNodeInfo nodes in the active window.
+screenshot_base64 (Optional)	String	Base64-encoded JPEG image (compressed at 80% quality). If Point/Crop mode is active, only the cropped bounding box is encoded.
+
+# Ideas for flow
+Again this could be changed or improved
+1. The user sends input from the input popup
+2. The state of 4 context source toggles (screenGrab, appTree, highlightedText, media) and any Point selection is passed to the relevant services
+3. CaptureAccessibilityService walks the active window's AccessibilityNodeInfo tree to pull text, media metadata, and focused elements. If screen_grab is enabled, takeScreenshot(...) extracts the hardware buffer, converts it to an ARGB bitmap, crops it (if Point mode is active), and compresses it to Base64.
+4. The JSON object is constructed and logged
+5. The JSOn is sent to the webhook. Response time and HTTP codes are logged in real time.
+
+
+# App
+When launching the app fullscreen, three sections
+
+## History (default section open)  (icon: `history`)
+All packages sent, filterable by context included and by input type.
+Real-time event logger with status indicators (Sending, Success, Error).
+
+
+
+## Customisation (icon: `palette`)
+
+
+### Toolbar settings
+Size: slider for icon size, therefore also controlling overall toolbar size
+Transparency: slider
+
+Input Selection Display:
+* All  - toolbar always shows all Input Selection items
+* Last used - toolbar shows a single icon, that of the latest Input Selection item that has been used. Tapping it triggers that icon's action. Long-pressing it expands the toolbar to show all the Input Selection icons.
+
+If input "All", allow the user to customise which items appear
+
+Display drag handle 
+
+
+## Settings  (icon: `settings`)
+### Permissions
+Three toggle buttons for enabling permissions. Either the active colour (to show that permissions are granted), or a secondary colour (to show they are not). Tapping the button takes you to the relevant system settings to enable full functionality (e.g. AccessibilityService, MediaProjection, NotificationListenerService).
+
+### Webhook
+URL - choose the url for the webhook
+test - action button to test the status of the webhook
+Retry time - period to be used for resending failed packages

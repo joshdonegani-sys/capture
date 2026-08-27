@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Capture Engine</string>
+    <string name="accessibility_service_label">Capture Engine Service</string>
+    <string name="accessibility_service_description">Enables Capture Engine to inspect UI elements and read active content to build contextual agent payloads.</string>
+    <string name="notification_listener_label">Capture Engine Media Listener</string>
+    <string name="screen_capture_channel_name">Screen Capture Service</string>
+    <string name="screen_capture_channel_desc">Active persistent notification to enable instant screenshot capture.</string>
+    <string name="screen_capture_notification_text">Capture Engine screen capture is active.</string>
+    <string name="process_text_title">Send to Capture Engine</string>
+    <string name="qs_tile_label">Capture HUD</string>
+</resources>
