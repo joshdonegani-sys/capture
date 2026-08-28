@@ -12,6 +12,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import com.capture.engine.services.CaptureTileService
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -32,6 +33,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import com.capture.engine.CaptureApplication
 import com.capture.engine.overlay.OverlayManager
@@ -39,6 +42,28 @@ import com.capture.engine.services.ScreenCaptureService
 import com.capture.engine.ui.theme.CaptureEngineTheme
 
 class MainActivity : ComponentActivity() {
+
+    private val permissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val recordGranted = permissions[Manifest.permission.RECORD_AUDIO] == true
+        if (recordGranted) {
+            Toast.makeText(this, "Microphone permission granted", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun checkAndRequestPermissions() {
+        val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        val missing = permissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            permissionsLauncher.launch(missing.toTypedArray())
+        }
+    }
 
     private val mediaProjectionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -56,12 +81,25 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestMediaProjectionPermission() {
-        val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+        if (ScreenCaptureService.isReady) {
+            stopService(Intent(this, ScreenCaptureService::class.java))
+            Toast.makeText(this, "Screen capture service stopped", Toast.LENGTH_SHORT).show()
+        } else {
+            val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            mediaProjectionLauncher.launch(projectionManager.createScreenCaptureIntent())
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra("REQUEST_AUDIO_PERMISSION", false)) {
+            checkAndRequestPermissions()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        checkAndRequestPermissions()
 
         // Show floating toolbar if overlay permission granted and enabled
         val app = application as CaptureApplication
@@ -70,6 +108,7 @@ class MainActivity : ComponentActivity() {
                 OverlayManager.getInstance(this).showToolbar()
             }
         }
+        CaptureTileService.requestTileUpdate(this)
 
         setContent {
             CaptureEngineTheme {
@@ -140,5 +179,6 @@ class MainActivity : ComponentActivity() {
                 OverlayManager.getInstance(this).showToolbar()
             }
         }
+        CaptureTileService.requestTileUpdate(this)
     }
 }

@@ -1,5 +1,6 @@
 package com.capture.engine.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,24 +24,34 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ShortText
 import androidx.compose.material.icons.filled.AdsClick
+import androidx.compose.material.icons.filled.AlignHorizontalCenter
+import androidx.compose.material.icons.filled.AlignHorizontalLeft
+import androidx.compose.material.icons.filled.AlignHorizontalRight
 import androidx.compose.material.icons.filled.AppShortcut
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.FormatAlignLeft
+import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MobileFriendly
+import androidx.compose.material.icons.filled.Nightlight
 import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Screenshot
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.ViewStream
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -75,6 +86,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.capture.engine.CaptureApplication
+import com.capture.engine.overlay.ExpandedTarget
+import com.capture.engine.overlay.ToolbarLayoutEngine
 import com.capture.engine.overlay.resolveToolbarColors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,17 +96,37 @@ fun CustomisationScreen(
     modifier: Modifier = Modifier
 ) {
     val settings = remember { CaptureApplication.instance.settingsRepository }
+
+    // Core Settings Flow
     val iconSize by settings.toolbarIconSizeFlow.collectAsState()
     val alpha by settings.toolbarAlphaFlow.collectAsState()
-    val displayMode by settings.inputSelectionDisplayModeFlow.collectAsState()
-    val lastUsedInput by settings.lastUsedInputTypeFlow.collectAsState()
     val colorRole by settings.toolbarColorRoleFlow.collectAsState()
     val customSeedColor by settings.toolbarCustomSeedColorFlow.collectAsState()
-    val contextDisplayMode by settings.contextSourcesDisplayModeFlow.collectAsState()
     val visibleInputIcons by settings.visibleInputIconsFlow.collectAsState()
-    val showDragHandle by settings.showDragHandleFlow.collectAsState()
+    val lastUsedInput by settings.lastUsedInputTypeFlow.collectAsState()
+
+    // Toolbar Layout Settings
+    val baseLayout by settings.toolbarBaseLayoutFlow.collectAsState()
+    val subLayout by settings.toolbarSubLayoutFlow.collectAsState()
+    val subDirection by settings.toolbarSubDirectionFlow.collectAsState()
+    val subConnection by settings.toolbarSubConnectionFlow.collectAsState()
+    val subAlign by settings.toolbarSubAlignFlow.collectAsState()
+    val subAlignModifier by settings.toolbarSubAlignModifierFlow.collectAsState()
+
+    // Dormant & Awake Configs
+    val dormantStyle by settings.toolbarDormantStyleFlow.collectAsState()
+    val dormantLocked by settings.toolbarDormantLockedFlow.collectAsState()
+    val dormantPositionMode by settings.toolbarDormantPositionModeFlow.collectAsState()
+    val awakeStyle by settings.toolbarAwakeStyleFlow.collectAsState()
+    val awakeLocked by settings.toolbarAwakeLockedFlow.collectAsState()
+    val awakePosition by settings.toolbarAwakePositionFlow.collectAsState()
+    val allIconsOrder by settings.toolbarAllIconsOrderFlow.collectAsState()
+    val wakeGesture by settings.toolbarWakeGestureFlow.collectAsState()
+    val sleepGesture by settings.toolbarSleepGestureFlow.collectAsState()
 
     var showColorDialog by remember { mutableStateOf(false) }
+    var previewExpandedTarget by remember { mutableStateOf(ExpandedTarget.JOINED_BOTH) }
+
     val isDark = isSystemInDarkTheme()
     val previewColors = resolveToolbarColors(
         colorRole = colorRole,
@@ -109,7 +142,7 @@ fun CustomisationScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Section Header
+        // Header
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -120,19 +153,17 @@ fun CustomisationScreen(
                 tint = MaterialTheme.colorScheme.primary
             )
             Text(
-                text = "Toolbar Customisation",
+                text = "Toolbar Layout & State Engine",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
         }
 
-        // Live Preview Card
+        // --- 1. LIVE PREVIEW CARD ---
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer
-            ),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
             shape = RoundedCornerShape(20.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         ) {
@@ -143,142 +174,92 @@ fun CustomisationScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = "LIVE PREVIEW",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "LIVE INTERACTIVE PREVIEW",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextButton(
+                        onClick = {
+                            previewExpandedTarget = when (previewExpandedTarget) {
+                                ExpandedTarget.NONE -> ExpandedTarget.JOINED_BOTH
+                                ExpandedTarget.JOINED_BOTH -> ExpandedTarget.INPUT_ONLY
+                                ExpandedTarget.INPUT_ONLY -> ExpandedTarget.CONTEXT_ONLY
+                                ExpandedTarget.CONTEXT_ONLY -> ExpandedTarget.NONE
+                            }
+                        }
+                    ) {
+                        Text(
+                            text = when (previewExpandedTarget) {
+                                ExpandedTarget.NONE -> "Collapsed"
+                                ExpandedTarget.JOINED_BOTH -> "Joined Expanded"
+                                ExpandedTarget.INPUT_ONLY -> "Input Expanded"
+                                ExpandedTarget.CONTEXT_ONLY -> "Context Expanded"
+                            },
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
 
                 val buttonSize = (iconSize + 14f).dp
                 val iconSizeDp = (iconSize - 2f).dp.coerceAtLeast(16.dp)
+                val menuButtonSize = (iconSize + 6f).dp.coerceIn(28.dp, 36.dp)
+                val menuIconSizeDp = (iconSize - 4f).dp.coerceIn(16.dp, 20.dp)
+                val dividerSize = (iconSize + 4f).dp
 
-                // Simulated Floating Toolbar
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = previewColors.containerColor,
-                    tonalElevation = 6.dp,
-                    shadowElevation = 8.dp,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                Box(
+                    modifier = Modifier.padding(12.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        // Simulated Context Strip if "Above"
-                        if (contextDisplayMode == "above") {
-                            SimulatedContextStrip(iconSizeDp, previewColors.contentColor)
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 6.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-                            )
-                        }
-
-                        // Input Selection Row
-                        Row(
-                            modifier = Modifier.padding(
-                                start = if (showDragHandle) 4.dp else 8.dp,
-                                end = if (contextDisplayMode == "menu") 4.dp else 8.dp,
-                                top = 2.dp,
-                                bottom = 2.dp
-                            ),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            if (showDragHandle) {
-                                Surface(
-                                    modifier = Modifier
-                                        .width(3.dp)
-                                        .height(14.dp),
-                                    shape = CircleShape,
-                                    color = previewColors.contentColor.copy(alpha = 0.5f)
-                                ) {}
-                            }
-
-                            if (displayMode == "all") {
-                                if (visibleInputIcons.contains("speech_to_text")) {
-                                    Icon(
-                                        imageVector = Icons.Default.RecordVoiceOver,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(buttonSize).padding(6.dp),
-                                        tint = previewColors.contentColor
-                                    )
-                                }
-                                if (visibleInputIcons.contains("mic_audio")) {
-                                    Icon(
-                                        imageVector = Icons.Default.Mic,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(buttonSize).padding(6.dp),
-                                        tint = previewColors.contentColor
-                                    )
-                                }
-                                if (visibleInputIcons.contains("clipboard_paste")) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentPaste,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(buttonSize).padding(6.dp),
-                                        tint = previewColors.contentColor
-                                    )
-                                }
-                                if (visibleInputIcons.contains("text_snippet")) {
-                                    Icon(
-                                        imageVector = Icons.Default.Keyboard,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(buttonSize).padding(6.dp),
-                                        tint = previewColors.contentColor
-                                    )
-                                }
-                            } else {
-                                val previewIcon = when (lastUsedInput) {
-                                    "mic_audio" -> Icons.Default.Mic
-                                    "clipboard_paste" -> Icons.Default.ContentPaste
-                                    "text_snippet" -> Icons.Default.Keyboard
-                                    else -> Icons.Default.RecordVoiceOver
-                                }
-                                Icon(
-                                    imageVector = previewIcon,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(buttonSize).padding(6.dp),
-                                    tint = previewColors.contentColor
-                                )
-                            }
-
-                            if (contextDisplayMode == "menu") {
-                                VerticalDivider(
-                                    modifier = Modifier
-                                        .height((iconSize + 4f).dp)
-                                        .padding(horizontal = 3.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant
-                                )
-
-                                Icon(
-                                    imageVector = Icons.Default.Menu,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(buttonSize).padding(6.dp),
-                                    tint = previewColors.contentColor
-                                )
-                            }
-                        }
-
-                        // Simulated Context Strip if "Below"
-                        if (contextDisplayMode == "below") {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 6.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-                            )
-                            SimulatedContextStrip(iconSizeDp, previewColors.contentColor)
-                        }
-                    }
+                    ToolbarLayoutEngine(
+                        baseLayout = baseLayout,
+                        subLayout = subLayout,
+                        subDirection = subDirection,
+                        subAlign = subAlign,
+                        subAlignModifier = subAlignModifier,
+                        expandedTarget = if (awakeStyle == "all icons") ExpandedTarget.JOINED_BOTH else previewExpandedTarget,
+                        isSingleIcon = awakeStyle == "single icon",
+                        colors = previewColors,
+                        buttonSize = buttonSize,
+                        iconSizeDp = iconSizeDp,
+                        menuButtonSize = menuButtonSize,
+                        menuIconSizeDp = menuIconSizeDp,
+                        dividerSize = dividerSize,
+                        lastUsedInput = lastUsedInput,
+                        visibleInputIcons = visibleInputIcons,
+                        hasActiveContext = true,
+                        screenGrab = true,
+                        appTree = false,
+                        highlightedText = true,
+                        media = false,
+                        pointActive = false,
+                        activeSelection = null,
+                        onInputClick = {},
+                        onInputLongClick = {},
+                        onContextClick = {},
+                        onContextLongClick = {},
+                        onInputSubSelected = {},
+                        onScreenGrabChange = {},
+                        onAppTreeChange = {},
+                        onHighlightedTextChange = {},
+                        onMediaChange = {},
+                        onTogglePointMode = {},
+                        onSelectAllContext = {},
+                        onSelectNoneContext = {}
+                    )
                 }
             }
         }
 
-        // Toolbar Settings Card
+        // --- 2. AWAKE CONFIGURATION CARD ---
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
@@ -286,50 +267,455 @@ fun CustomisationScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                Text(
-                    text = "Toolbar Settings",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.WbSunny, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Awake State Configuration", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                }
 
-                // 1. Size Slider
+                // Awake Style (Single Icon, Double Icon, All Icons)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Awake Style", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = awakeStyle == "single icon",
+                            onClick = {
+                                settings.toolbarAwakeStyle = "single icon"
+                                settings.toolbarSubConnection = "joined"
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                        ) {
+                            Text("Single Icon")
+                        }
+                        SegmentedButton(
+                            selected = awakeStyle == "double icon",
+                            onClick = { settings.toolbarAwakeStyle = "double icon" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                        ) {
+                            Text("Double Icon")
+                        }
+                        SegmentedButton(
+                            selected = awakeStyle == "all icons",
+                            onClick = { settings.toolbarAwakeStyle = "all icons" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                        ) {
+                            Text("All Icons")
+                        }
+                    }
+                    Text(
+                        text = when (awakeStyle) {
+                            "single icon" -> "Single Icon: Shows only the last used input type. Expands both sub-groups simultaneously."
+                            "all icons" -> "All Icons: Base nodes skipped. Subgroups rendered directly as a single cluster."
+                            else -> "Double Icon: Renders both Input Type and Context Menu base nodes."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Awake Position Mode
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Awake Position Behavior", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = awakePosition == "free",
+                            onClick = { settings.toolbarAwakePosition = "free" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                        ) {
+                            Text("Free")
+                        }
+                        SegmentedButton(
+                            selected = awakePosition == "dockable",
+                            onClick = { settings.toolbarAwakePosition = "dockable" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                        ) {
+                            Text("Dockable")
+                        }
+                        SegmentedButton(
+                            selected = awakePosition == "always docked",
+                            onClick = { settings.toolbarAwakePosition = "always docked" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                        ) {
+                            Text("Always Docked")
+                        }
+                    }
+                    Text(
+                        text = when (awakePosition) {
+                            "free" -> "Free: Absolute X,Y placement anywhere on screen."
+                            "dockable" -> "Dockable: Snaps cleanly to viewport edges when dragged near boundaries."
+                            else -> "Always Docked: Restricted strictly to 1D track along the viewport edge."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // Awake Locked switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Lock Awake Position", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text("Disables drag gestures when awake.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = awakeLocked, onCheckedChange = { settings.toolbarAwakeLocked = it })
+                }
+
+                // If All Icons, show Order Setting
+                if (awakeStyle == "all icons") {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("All Icons Cluster Order", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        val orderOptions = if (baseLayout == "horiz") listOf("inner", "outer", "left", "right") else listOf("inner", "outer", "up", "down")
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            orderOptions.forEachIndexed { idx, opt ->
+                                SegmentedButton(
+                                    selected = allIconsOrder == opt,
+                                    onClick = { settings.toolbarAllIconsOrder = opt },
+                                    shape = SegmentedButtonDefaults.itemShape(index = idx, count = orderOptions.size)
+                                ) {
+                                    Text(opt.replaceFirstChar { it.uppercase() })
+                                }
+                            }
+                        }
+                        Text(
+                            text = "Inner/Outer dynamically swaps based on distance to the screen center axis.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // --- 3. BASE & SUB LAYOUT ENGINE CARD (Active when not All Icons) ---
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Dashboard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Base & Sub Layout Rules", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                }
+
+                // Base Layout (Horizontal / Vertical)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Base Container Axis", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = baseLayout == "horiz",
+                            onClick = { settings.toolbarBaseLayout = "horiz" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) {
+                            Text("Horizontal (Row)")
+                        }
+                        SegmentedButton(
+                            selected = baseLayout == "vert",
+                            onClick = { settings.toolbarBaseLayout = "vert" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) {
+                            Text("Vertical (Column)")
+                        }
+                    }
+                }
+
+                if (awakeStyle != "all icons") {
+                    // Sub Layout (Flow Axis vs Cross Axis)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Sub Expansion Axis", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            SegmentedButton(
+                                selected = subLayout == "flow axis",
+                                onClick = { settings.toolbarSubLayout = "flow axis" },
+                                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                            ) {
+                                Text("Flow Axis (Parallel)")
+                            }
+                            SegmentedButton(
+                                selected = subLayout == "cross axis",
+                                onClick = { settings.toolbarSubLayout = "cross axis" },
+                                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                            ) {
+                                Text("Cross Axis (Perpendicular)")
+                            }
+                        }
+                    }
+
+                    // Sub Direction (Down, Up, Left, Right)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Sub Physical Direction", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            listOf("down", "up", "left", "right").forEachIndexed { idx, dir ->
+                                SegmentedButton(
+                                    selected = subDirection == dir,
+                                    onClick = { settings.toolbarSubDirection = dir },
+                                    shape = SegmentedButtonDefaults.itemShape(index = idx, count = 4)
+                                ) {
+                                    Text(dir.replaceFirstChar { it.uppercase() })
+                                }
+                            }
+                        }
+                    }
+
+                    // Sub Connection (Separate vs Joined)
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Sub Expansion Connection", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            SegmentedButton(
+                                selected = subConnection == "separate" && awakeStyle != "single icon",
+                                onClick = { settings.toolbarSubConnection = "separate" },
+                                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                                enabled = awakeStyle != "single icon"
+                            ) {
+                                Text("Separate")
+                            }
+                            SegmentedButton(
+                                selected = subConnection == "joined" || awakeStyle == "single icon",
+                                onClick = { settings.toolbarSubConnection = "joined" },
+                                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                                enabled = awakeStyle != "single icon"
+                            ) {
+                                Text("Joined")
+                            }
+                        }
+                        if (awakeStyle == "single icon") {
+                            Text("Single Icon awake style automatically forces Joined connection.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
+                    // Sub Align (Flow Axis only)
+                    if (subLayout == "flow axis") {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Sub Alignment (Flow Axis)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                SegmentedButton(
+                                    selected = subAlign == "full base" || subConnection == "joined" || awakeStyle == "single icon",
+                                    onClick = { settings.toolbarSubAlign = "full base" },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                                    enabled = subConnection != "joined" && awakeStyle != "single icon"
+                                ) {
+                                    Text("Full Base")
+                                }
+                                SegmentedButton(
+                                    selected = subAlign == "base icon" && subConnection != "joined" && awakeStyle != "single icon",
+                                    onClick = { settings.toolbarSubAlign = "base icon" },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                                    enabled = subConnection != "joined" && awakeStyle != "single icon"
+                                ) {
+                                    Text("Base Icon")
+                                }
+                            }
+
+                            // Sub Align Modifiers (Top/Middle/Bottom or Start/Center/End)
+                            if (subAlign == "full base" || subConnection == "joined" || awakeStyle == "single icon") {
+                                val modLabels = if (baseLayout == "horiz") listOf("start", "middle", "end") else listOf("top", "middle", "bottom")
+                                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                                    listOf("top", "middle", "bottom").forEachIndexed { idx, mod ->
+                                        SegmentedButton(
+                                            selected = subAlignModifier == mod,
+                                            onClick = { settings.toolbarSubAlignModifier = mod },
+                                            shape = SegmentedButtonDefaults.itemShape(index = idx, count = 3)
+                                        ) {
+                                            Text(modLabels[idx].replaceFirstChar { it.uppercase() })
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- 4. DORMANT STATE & GESTURES CARD ---
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Nightlight, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Dormant State & Gestures", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                }
+
+                // Dormant Style (Small Icon / Horiz Bar / Vert Bar)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Dormant Indicator Style", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = dormantStyle == "horizontal bar",
+                            onClick = { settings.toolbarDormantStyle = "horizontal bar" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                        ) {
+                            Text("Horiz Bar")
+                        }
+                        SegmentedButton(
+                            selected = dormantStyle == "vertical bar",
+                            onClick = { settings.toolbarDormantStyle = "vertical bar" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                        ) {
+                            Text("Vert Bar")
+                        }
+                        SegmentedButton(
+                            selected = dormantStyle == "small icon",
+                            onClick = { settings.toolbarDormantStyle = "small icon" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                        ) {
+                            Text("Small Icon")
+                        }
+                    }
+                }
+
+                // Dormant Position Mode (Off / Defined)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Dormant Position Mode", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = dormantPositionMode == "off",
+                            onClick = { settings.toolbarDormantPositionMode = "off" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) {
+                            Text("Inherit Awake")
+                        }
+                        SegmentedButton(
+                            selected = dormantPositionMode == "defined",
+                            onClick = { settings.toolbarDormantPositionMode = "defined" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) {
+                            Text("Defined Spot")
+                        }
+                    }
+                }
+
+                // Wake Gesture
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Wake Gesture", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = wakeGesture == "single tap",
+                            onClick = { settings.toolbarWakeGesture = "single tap" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                        ) {
+                            Text("Single Tap")
+                        }
+                        SegmentedButton(
+                            selected = wakeGesture == "double tap",
+                            onClick = { settings.toolbarWakeGesture = "double tap" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                        ) {
+                            Text("Double Tap")
+                        }
+                        SegmentedButton(
+                            selected = wakeGesture == "long tap",
+                            onClick = { settings.toolbarWakeGesture = "long tap" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                        ) {
+                            Text("Long Tap")
+                        }
+                    }
+                }
+
+                // Sleep Gesture
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Sleep Gesture", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = sleepGesture == "double tap",
+                            onClick = { settings.toolbarSleepGesture = "double tap" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
+                        ) {
+                            Text("Double Tap")
+                        }
+                        SegmentedButton(
+                            selected = sleepGesture == "flick",
+                            onClick = { settings.toolbarSleepGesture = "flick" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
+                        ) {
+                            Text("Flick")
+                        }
+                        SegmentedButton(
+                            selected = sleepGesture == "drag to edge",
+                            onClick = { settings.toolbarSleepGesture = "drag to edge" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
+                        ) {
+                            Text("Drag Edge")
+                        }
+                    }
+                }
+
+                // Dormant Locked switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Lock Dormant Indicator", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text("Disables drag gestures when dormant.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = dormantLocked, onCheckedChange = { settings.toolbarDormantLocked = it })
+                }
+            }
+        }
+
+        // --- 5. APPEARANCE & COLOUR CARD ---
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Appearance & Styling", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                }
+
+                // Size Slider
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PhotoSizeSelectLarge,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = "Size",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                        Text(
-                            text = "${iconSize.toInt()} dp",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Text("Icon Size", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text("${iconSize.toInt()} dp", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     }
-                    Text(
-                        text = "Controls icon size and overall floating toolbar dimensions.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                     Slider(
                         value = iconSize,
                         onValueChange = { settings.toolbarIconSize = it },
@@ -338,41 +724,16 @@ fun CustomisationScreen(
                     )
                 }
 
-                // 2. Transparency Slider
+                // Transparency Slider
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Opacity,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = "Transparency",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                        Text(
-                            text = "${(alpha * 100).toInt()}%",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Text("Transparency", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text("${(alpha * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     }
-                    Text(
-                        text = "Adjust background opacity of the floating toolbar surface.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                     Slider(
                         value = alpha,
                         onValueChange = { settings.toolbarAlpha = it },
@@ -381,304 +742,45 @@ fun CustomisationScreen(
                     )
                 }
 
-                // 3. Colour Swatches (5 M3 Roles + 1 Custom Seed Swatch)
+                // Colour Swatches
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ColorLens,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Colour",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    Text(
-                        text = "Material 3 container role presets and dynamic tonal seed generator.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
+                    Text("Material 3 Role Presets & Tonal Seed", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Swatch 1: Surface Container High (Default)
-                        ColorSwatch(
-                            label = "Default",
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            isSelected = colorRole == "surface_container",
-                            onClick = { settings.toolbarColorRole = "surface_container" }
-                        )
-
-                        // Swatch 2: Primary Container
-                        ColorSwatch(
-                            label = "Primary",
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            isSelected = colorRole == "primary_container",
-                            onClick = { settings.toolbarColorRole = "primary_container" }
-                        )
-
-                        // Swatch 3: Secondary Container
-                        ColorSwatch(
-                            label = "Secondary",
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            isSelected = colorRole == "secondary_container",
-                            onClick = { settings.toolbarColorRole = "secondary_container" }
-                        )
-
-                        // Swatch 4: Tertiary Container
-                        ColorSwatch(
-                            label = "Tertiary",
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                            isSelected = colorRole == "tertiary_container",
-                            onClick = { settings.toolbarColorRole = "tertiary_container" }
-                        )
-
-                        // Swatch 5: Surface Variant
-                        ColorSwatch(
-                            label = "Variant",
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            isSelected = colorRole == "surface_variant",
-                            onClick = { settings.toolbarColorRole = "surface_variant" }
-                        )
-
-                        // Swatch 6: Custom Seed Swatch
+                        ColorSwatch("Default", MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.onSurfaceVariant, colorRole == "surface_container") { settings.toolbarColorRole = "surface_container" }
+                        ColorSwatch("Primary", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer, colorRole == "primary_container") { settings.toolbarColorRole = "primary_container" }
+                        ColorSwatch("Secondary", MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, colorRole == "secondary_container") { settings.toolbarColorRole = "secondary_container" }
+                        ColorSwatch("Tertiary", MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer, colorRole == "tertiary_container") { settings.toolbarColorRole = "tertiary_container" }
+                        ColorSwatch("Variant", MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, colorRole == "surface_variant") { settings.toolbarColorRole = "surface_variant" }
                         Box(
                             modifier = Modifier
                                 .size(44.dp)
                                 .clip(CircleShape)
                                 .background(Color(customSeedColor))
-                                .border(
-                                    width = if (colorRole == "custom") 2.5.dp else 1.dp,
-                                    color = if (colorRole == "custom") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                    shape = CircleShape
-                                )
+                                .border(if (colorRole == "custom") 2.5.dp else 1.dp, if (colorRole == "custom") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
                                 .clickable {
                                     settings.toolbarColorRole = "custom"
                                     showColorDialog = true
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = if (colorRole == "custom") Icons.Default.Check else Icons.Default.Palette,
-                                contentDescription = "Custom Seed Colour",
-                                modifier = Modifier.size(20.dp),
-                                tint = Color.White
-                            )
+                            Icon(if (colorRole == "custom") Icons.Default.Check else Icons.Default.Palette, null, Modifier.size(20.dp), tint = Color.White)
                         }
                     }
-                }
-
-                // 4. Context Sources Display Mode (Menu, Above, Below)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ViewStream,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Context Sources Display",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    SingleChoiceSegmentedButtonRow(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        SegmentedButton(
-                            selected = contextDisplayMode == "menu",
-                            onClick = { settings.contextSourcesDisplayMode = "menu" },
-                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
-                        ) {
-                            Text("Menu")
-                        }
-                        SegmentedButton(
-                            selected = contextDisplayMode == "above",
-                            onClick = { settings.contextSourcesDisplayMode = "above" },
-                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
-                        ) {
-                            Text("Above")
-                        }
-                        SegmentedButton(
-                            selected = contextDisplayMode == "below",
-                            onClick = { settings.contextSourcesDisplayMode = "below" },
-                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
-                        ) {
-                            Text("Below")
-                        }
-                    }
-
-                    Text(
-                        text = when (contextDisplayMode) {
-                            "above" -> "Above: Context sources displayed directly above input selection icons in a unified card."
-                            "below" -> "Below: Context sources displayed directly below input selection icons in a unified card."
-                            else -> "Menu: Context sources accessible via the flyout hamburger menu icon."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // 5. Input Selection Display Mode
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Input Selection Display",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    SingleChoiceSegmentedButtonRow(
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        SegmentedButton(
-                            selected = displayMode == "all",
-                            onClick = { settings.inputSelectionDisplayMode = "all" },
-                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                        ) {
-                            Text("All Icons")
-                        }
-                        SegmentedButton(
-                            selected = displayMode == "last_used",
-                            onClick = { settings.inputSelectionDisplayMode = "last_used" },
-                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                        ) {
-                            Text("Last Used")
-                        }
-                    }
-
-                    Text(
-                        text = if (displayMode == "all") {
-                            "All: Toolbar displays selected Input Selection items."
-                        } else {
-                            "Last used: Toolbar shows a single icon of the latest input used. Tap to trigger action; long-press to expand all icons."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    // 6. Visible Input Icons Selection (Only when displayMode == "all")
-                    if (displayMode == "all") {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Visible Input Icons",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Choose which input items appear on the toolbar (at least 1 must remain active).",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            InputIconToggle(
-                                icon = Icons.Default.RecordVoiceOver,
-                                contentDescription = "Dictate",
-                                isSelected = visibleInputIcons.contains("speech_to_text"),
-                                onClick = { settings.toggleInputIconVisibility("speech_to_text") }
-                            )
-                            InputIconToggle(
-                                icon = Icons.Default.Mic,
-                                contentDescription = "Record",
-                                isSelected = visibleInputIcons.contains("mic_audio"),
-                                onClick = { settings.toggleInputIconVisibility("mic_audio") }
-                            )
-                            InputIconToggle(
-                                icon = Icons.Default.ContentPaste,
-                                contentDescription = "Paste",
-                                isSelected = visibleInputIcons.contains("clipboard_paste"),
-                                onClick = { settings.toggleInputIconVisibility("clipboard_paste") }
-                            )
-                            InputIconToggle(
-                                icon = Icons.Default.Keyboard,
-                                contentDescription = "Type",
-                                isSelected = visibleInputIcons.contains("text_snippet"),
-                                onClick = { settings.toggleInputIconVisibility("text_snippet") }
-                            )
-                        }
-                    }
-                }
-
-                // 7. Display Drag Handle Toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DragIndicator,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Column {
-                            Text(
-                                text = "Display Drag Handle",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "Show visual grip indicator on toolbar",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Switch(
-                        checked = showDragHandle,
-                        onCheckedChange = { settings.showDragHandle = it }
-                    )
                 }
             }
         }
     }
 
-    // Custom Seed Color Picker Dialog
     if (showColorDialog) {
         CustomColorPickerDialog(
             initialColor = customSeedColor,
             onDismiss = { showColorDialog = false },
-            onColorSelected = { selected ->
-                settings.toolbarCustomSeedColor = selected
+            onColorSelected = {
+                settings.toolbarCustomSeedColor = it
                 settings.toolbarColorRole = "custom"
                 showColorDialog = false
             }
@@ -687,221 +789,65 @@ fun CustomisationScreen(
 }
 
 @Composable
-private fun ColorSwatch(
-    label: String,
-    containerColor: Color,
-    contentColor: Color,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
+private fun ColorSwatch(label: String, containerColor: Color, contentColor: Color, isSelected: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
                 .background(containerColor)
-                .border(
-                    width = if (isSelected) 2.5.dp else 1.dp,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                    shape = CircleShape
-                )
+                .border(if (isSelected) 2.5.dp else 1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = "$label Selected",
-                    modifier = Modifier.size(20.dp),
-                    tint = contentColor
-                )
-            }
+            if (isSelected) Icon(Icons.Default.Check, null, Modifier.size(20.dp), tint = contentColor)
         }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-        )
+        Text(label, style = MaterialTheme.typography.labelSmall, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
     }
 }
 
 @Composable
-private fun InputIconToggle(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    contentDescription: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    if (isSelected) {
-        FilledTonalIconButton(
-            onClick = onClick,
-            modifier = Modifier.size(42.dp),
-            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-        ) {
-            Icon(imageVector = icon, contentDescription = contentDescription, modifier = Modifier.size(20.dp))
-        }
-    } else {
-        OutlinedIconButton(
-            onClick = onClick,
-            modifier = Modifier.size(42.dp),
-            colors = IconButtonDefaults.outlinedIconButtonColors(
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-            )
-        ) {
-            Icon(imageVector = icon, contentDescription = contentDescription, modifier = Modifier.size(20.dp))
-        }
-    }
-}
-
-@Composable
-private fun SimulatedContextStrip(iconSizeDp: androidx.compose.ui.unit.Dp, contentColor: Color) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp)
-    ) {
-        Icon(Icons.Default.MobileFriendly, null, Modifier.size(iconSizeDp), tint = contentColor)
-        Icon(Icons.Default.Block, null, Modifier.size(iconSizeDp), tint = contentColor)
-        Icon(Icons.Default.AdsClick, null, Modifier.size(iconSizeDp), tint = contentColor)
-        VerticalDivider(
-            modifier = Modifier
-                .height(iconSizeDp * 0.8f)
-                .padding(horizontal = 2.dp),
-            color = MaterialTheme.colorScheme.outlineVariant
-        )
-        Icon(Icons.Default.Screenshot, null, Modifier.size(iconSizeDp), tint = contentColor)
-        Icon(Icons.Default.AppShortcut, null, Modifier.size(iconSizeDp), tint = contentColor)
-        Icon(Icons.AutoMirrored.Filled.ShortText, null, Modifier.size(iconSizeDp), tint = contentColor)
-        Icon(Icons.Default.PlayCircle, null, Modifier.size(iconSizeDp), tint = contentColor)
-    }
-}
-
-@Composable
-private fun CustomColorPickerDialog(
-    initialColor: Int,
-    onDismiss: () -> Unit,
-    onColorSelected: (Int) -> Unit
-) {
+private fun CustomColorPickerDialog(initialColor: Int, onDismiss: () -> Unit, onColorSelected: (Int) -> Unit) {
     val presetSeeds = listOf(
-        0xFF6750A4.toInt(), // Deep Purple
-        0xFF3F51B5.toInt(), // Indigo
-        0xFF007AFF.toInt(), // Vibrant Blue
-        0xFF009688.toInt(), // Teal
-        0xFF2E7D32.toInt(), // Forest Green
-        0xFFFF9800.toInt(), // Amber
-        0xFFFF5722.toInt(), // Coral
-        0xFFE91E63.toInt()  // Rose
+        0xFF6750A4.toInt(), 0xFF3F51B5.toInt(), 0xFF007AFF.toInt(), 0xFF009688.toInt(),
+        0xFF2E7D32.toInt(), 0xFFFF9800.toInt(), 0xFFFF5722.toInt(), 0xFFE91E63.toInt()
     )
     var selectedColor by remember { mutableStateOf(initialColor) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text("Select Seed Colour", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        },
+        title = { Text("Select Seed Colour", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(
-                    "Pick a vibrant seed colour to generate custom Material 3 container and icon tones.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                // Preset Swatches Grid
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                Text("Pick a seed colour to generate dynamic tonal container and icon colours.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     presetSeeds.take(4).forEach { colorInt ->
-                        PresetColorDot(
-                            colorInt = colorInt,
-                            isSelected = selectedColor == colorInt,
-                            onClick = { selectedColor = colorInt }
-                        )
+                        PresetColorDot(colorInt, selectedColor == colorInt) { selectedColor = colorInt }
                     }
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     presetSeeds.drop(4).forEach { colorInt ->
-                        PresetColorDot(
-                            colorInt = colorInt,
-                            isSelected = selectedColor == colorInt,
-                            onClick = { selectedColor = colorInt }
-                        )
-                    }
-                }
-
-                // Live Preview of Generated Tones
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(selectedColor).copy(alpha = 0.25f),
-                    border = BorderStroke(1.dp, Color(selectedColor)),
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier.size(24.dp).clip(CircleShape).background(Color(selectedColor))
-                        )
-                        Text(
-                            "Generated M3 Tonal Palette Preview",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        PresetColorDot(colorInt, selectedColor == colorInt) { selectedColor = colorInt }
                     }
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = { onColorSelected(selectedColor) }) {
-                Text("Select", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
+        confirmButton = { TextButton(onClick = { onColorSelected(selectedColor) }) { Text("Select", fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
 @Composable
-private fun PresetColorDot(
-    colorInt: Int,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
+private fun PresetColorDot(colorInt: Int, isSelected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(42.dp)
             .clip(CircleShape)
             .background(Color(colorInt))
-            .border(
-                width = if (isSelected) 3.dp else 1.dp,
-                color = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
-                shape = CircleShape
-            )
+            .border(if (isSelected) 3.dp else 1.dp, if (isSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent, CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        if (isSelected) {
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(18.dp)
-            )
-        }
+        if (isSelected) Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(18.dp))
     }
 }

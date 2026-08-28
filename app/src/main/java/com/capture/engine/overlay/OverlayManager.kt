@@ -8,8 +8,14 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -42,10 +48,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class OverlayLifecycleOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
+class OverlayLifecycleOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner, OnBackPressedDispatcherOwner {
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val store = ViewModelStore()
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
+    override val onBackPressedDispatcher = OnBackPressedDispatcher()
 
     init {
         savedStateRegistryController.performRestore(null)
@@ -107,6 +114,20 @@ class OverlayManager private constructor(private val context: Context) {
         }
 
         val dm = context.resources.displayMetrics
+        val screenWidth = dm.widthPixels
+        val screenHeight = dm.heightPixels
+
+        val initialX = if (settings.toolbarDormantPositionMode == "defined" && !_isExpanded.value) {
+            settings.toolbarDormantPosX
+        } else {
+            16
+        }
+        val initialY = if (settings.toolbarDormantPositionMode == "defined" && !_isExpanded.value) {
+            settings.toolbarDormantPosY
+        } else {
+            (screenHeight * 0.45f).toInt()
+        }
+
         toolbarParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -116,32 +137,125 @@ class OverlayManager private constructor(private val context: Context) {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 16
-            y = (dm.heightPixels * 0.45f).toInt()
+            x = initialX
+            y = initialY
         }
+
+        val windowXFlow = MutableStateFlow(initialX)
+        val windowYFlow = MutableStateFlow(initialY)
 
         toolbarLifecycle = OverlayLifecycleOwner()
         toolbarView = ComposeView(context).apply {
+            clipChildren = false
+            clipToPadding = false
             setViewTreeLifecycleOwner(toolbarLifecycle)
             setViewTreeViewModelStoreOwner(toolbarLifecycle)
             setViewTreeSavedStateRegistryOwner(toolbarLifecycle)
 
             setContent {
+                val currentX by windowXFlow.collectAsState()
+                val currentY by windowYFlow.collectAsState()
+
                 CaptureEngineTheme {
                     FloatingToolbar(
                         isExpanded = _isExpanded,
                         isPointActive = _isPointModeActive,
                         hasActiveSelection = _activeSelectionBounds,
-                        onExpandToggle = { _isExpanded.value = !_isExpanded.value },
-                        onCollapse = { _isExpanded.value = false },
+                        windowPosX = currentX,
+                        windowPosY = currentY,
+                        screenWidth = screenWidth,
+                        screenHeight = screenHeight,
+                        onExpandToggle = {
+                            val newExpanded = !_isExpanded.value
+                            _isExpanded.value = newExpanded
+                            if (!newExpanded && settings.toolbarDormantPositionMode == "defined") {
+                                toolbarParams?.let { params ->
+                                    params.x = settings.toolbarDormantPosX
+                                    params.y = settings.toolbarDormantPosY
+                                    windowXFlow.value = params.x
+                                    windowYFlow.value = params.y
+                                    windowManager.updateViewLayout(this@apply, params)
+                                }
+                            }
+                        },
+                        onCollapse = {
+                            _isExpanded.value = false
+                            if (settings.toolbarDormantPositionMode == "defined") {
+                                toolbarParams?.let { params ->
+                                    params.x = settings.toolbarDormantPosX
+                                    params.y = settings.toolbarDormantPosY
+                                    windowXFlow.value = params.x
+                                    windowYFlow.value = params.y
+                                    windowManager.updateViewLayout(this@apply, params)
+                                }
+                            }
+                        },
+                        onFlickSleep = {
+                            _isExpanded.value = false
+                        },
                         onDrag = { dx, dy ->
                             toolbarParams?.let { params ->
                                 val w = toolbarView?.width ?: 0
                                 val h = toolbarView?.height ?: 0
-                                val maxX = (dm.widthPixels - w).coerceAtLeast(0)
-                                val maxY = (dm.heightPixels - h - 70).coerceAtLeast(0)
-                                params.x = (params.x + dx.toInt()).coerceIn(0, maxX)
-                                params.y = (params.y + dy.toInt()).coerceIn(0, maxY)
+                                val maxX = (screenWidth - w).coerceAtLeast(0)
+                                val maxY = (screenHeight - h - 70).coerceAtLeast(0)
+
+                                val awakePosition = settings.toolbarAwakePosition
+                                if (_isExpanded.value && awakePosition == "always docked") {
+                                    // 1D track along nearest edge
+                                    val distLeft = params.x
+                                    val distRight = maxX - params.x
+                                    val distTop = params.y
+                                    val distBottom = maxY - params.y
+                                    val minDist = minOf(distLeft, distRight, distTop, distBottom)
+
+                                    if (minDist == distLeft || minDist == distRight) {
+                                        // Track along Y
+                                        params.y = (params.y + dy.toInt()).coerceIn(0, maxY)
+                                        // Dragging towards adjacent edge sleeps
+                                        if (params.y <= 10 || params.y >= maxY - 10) {
+                                            if (settings.toolbarSleepGesture == "drag to edge") {
+                                                _isExpanded.value = false
+                                            }
+                                        }
+                                    } else {
+                                        // Track along X
+                                        params.x = (params.x + dx.toInt()).coerceIn(0, maxX)
+                                        if (params.x <= 10 || params.x >= maxX - 10) {
+                                            if (settings.toolbarSleepGesture == "drag to edge") {
+                                                _isExpanded.value = false
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    var newX = (params.x + dx.toInt()).coerceIn(0, maxX)
+                                    var newY = (params.y + dy.toInt()).coerceIn(0, maxY)
+
+                                    // Dockable snap
+                                    if (_isExpanded.value && awakePosition == "dockable") {
+                                        val snapThreshold = 60
+                                        if (newX < snapThreshold) newX = 0
+                                        else if (newX > maxX - snapThreshold) newX = maxX
+                                        if (newY < snapThreshold) newY = 0
+                                        else if (newY > maxY - snapThreshold) newY = maxY
+                                    }
+
+                                    // Check drag to dormant zone
+                                    if (_isExpanded.value && settings.toolbarDormantPositionMode == "defined" && settings.toolbarSleepGesture == "drag to dormant zone") {
+                                        val targetX = settings.toolbarDormantPosX
+                                        val targetY = settings.toolbarDormantPosY
+                                        val distSq = (newX - targetX) * (newX - targetX) + (newY - targetY) * (newY - targetY)
+                                        if (distSq < 10000) { // 100px radius
+                                            _isExpanded.value = false
+                                        }
+                                    }
+
+                                    params.x = newX
+                                    params.y = newY
+                                }
+
+                                windowXFlow.value = params.x
+                                windowYFlow.value = params.y
                                 windowManager.updateViewLayout(this@apply, params)
                             }
                         },
@@ -162,7 +276,6 @@ class OverlayManager private constructor(private val context: Context) {
                         },
                         onTogglePointMode = {
                             if (_activeSelectionBounds.value != null) {
-                                // Clear existing selection per spec
                                 _activeSelectionBounds.value = null
                                 _isPointModeActive.value = false
                             } else {
@@ -266,11 +379,24 @@ class OverlayManager private constructor(private val context: Context) {
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         }
 
-        bottomSheetLifecycle = OverlayLifecycleOwner()
+        val lifecycle = OverlayLifecycleOwner()
+        bottomSheetLifecycle = lifecycle
         bottomSheetView = ComposeView(context).apply {
-            setViewTreeLifecycleOwner(bottomSheetLifecycle)
-            setViewTreeViewModelStoreOwner(bottomSheetLifecycle)
-            setViewTreeSavedStateRegistryOwner(bottomSheetLifecycle)
+            setViewTreeLifecycleOwner(lifecycle)
+            setViewTreeViewModelStoreOwner(lifecycle)
+            setViewTreeSavedStateRegistryOwner(lifecycle)
+            setViewTreeOnBackPressedDispatcherOwner(lifecycle)
+
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setOnKeyListener { _, keyCode, event ->
+                if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                    bottomSheetLifecycle?.onBackPressedDispatcher?.onBackPressed()
+                    true
+                } else {
+                    false
+                }
+            }
 
             setContent {
                 CaptureEngineTheme {

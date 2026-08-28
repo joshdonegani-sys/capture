@@ -1,0 +1,2638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Capture Engine - Floating Toolbar Layout Simulator</title>
+  
+  <!-- Google Fonts: Roboto, Google Sans, and Material Symbols Outlined -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ==========================================================================
+       1. Material Design 3 Design System & Theme Tokens
+       ========================================================================== */
+    :root {
+      /* M3 Primary Color Tokens (Default: Deep Purple / Expressive Indigo) */
+      --md-sys-color-primary: #6750A4;
+      --md-sys-color-on-primary: #FFFFFF;
+      --md-sys-color-primary-container: #EADDFF;
+      --md-sys-color-on-primary-container: #21005D;
+      
+      --md-sys-color-secondary: #625B71;
+      --md-sys-color-on-secondary: #FFFFFF;
+      --md-sys-color-secondary-container: #E8DEF8;
+      --md-sys-color-on-secondary-container: #1D192B;
+      
+      --md-sys-color-tertiary: #7D5260;
+      --md-sys-color-on-tertiary: #FFFFFF;
+      --md-sys-color-tertiary-container: #FFD8E4;
+      --md-sys-color-on-tertiary-container: #31111D;
+      
+      --md-sys-color-surface: #FEF7FF;
+      --md-sys-color-on-surface: #1D1B20;
+      --md-sys-color-surface-variant: #E7E0EC;
+      --md-sys-color-on-surface-variant: #49454F;
+      --md-sys-color-outline: #79747E;
+      --md-sys-color-outline-variant: #CAC4D0;
+      
+      --md-sys-color-surface-container: #F3EDF7;
+      --md-sys-color-surface-container-low: #F7F2FA;
+      --md-sys-color-surface-container-high: #ECE6F0;
+      --md-sys-color-surface-container-highest: #E6E0E9;
+      --md-sys-color-inverse-surface: #313033;
+      --md-sys-color-inverse-on-surface: #F4EFF4;
+
+      /* UI App Shell colors */
+      --app-bg: #0F1117;
+      --app-surface: #181B24;
+      --app-surface-2: #212634;
+      --app-border: rgba(255, 255, 255, 0.08);
+      --app-text: #E6EDF3;
+      --app-text-muted: #8B949E;
+      --app-accent: #7C4DFF;
+
+      /* Configurable Toolbar Dynamic Tokens */
+      --tb-container-color: rgba(243, 237, 247, 0.92);
+      --tb-content-color: #49454F;
+      --tb-active-container: #EADDFF;
+      --tb-active-content: #21005D;
+      --tb-outline-color: rgba(202, 196, 208, 0.4);
+      --tb-corner-radius: 28px;
+      --tb-icon-size: 22px;
+      --tb-button-size: 40px;
+      --tb-elevation: 0px 8px 24px rgba(0, 0, 0, 0.28);
+      --tb-alpha: 0.94;
+      --tb-blur: 16px;
+    }
+
+    [data-theme="dark"] {
+      --md-sys-color-primary: #D0BCFF;
+      --md-sys-color-on-primary: #381E72;
+      --md-sys-color-primary-container: #4F378B;
+      --md-sys-color-on-primary-container: #EADDFF;
+
+      --md-sys-color-secondary: #CCC2DC;
+      --md-sys-color-on-secondary: #332D41;
+      --md-sys-color-secondary-container: #4A4458;
+      --md-sys-color-on-secondary-container: #E8DEF8;
+
+      --md-sys-color-surface: #141218;
+      --md-sys-color-on-surface: #E6E0E9;
+      --md-sys-color-surface-variant: #49454F;
+      --md-sys-color-on-surface-variant: #CAC4D0;
+      --md-sys-color-outline: #938F99;
+      --md-sys-color-outline-variant: #49454F;
+
+      --md-sys-color-surface-container: #211F26;
+      --md-sys-color-surface-container-low: #1D1B20;
+      --md-sys-color-surface-container-high: #2B2930;
+      --md-sys-color-surface-container-highest: #36343B;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      font-family: 'Google Sans', 'Roboto', system-ui, -apple-system, sans-serif;
+      background: var(--app-bg);
+      color: var(--app-text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top App Bar */
+    header.app-header {
+      height: 56px;
+      background: var(--app-surface);
+      border-bottom: 1px solid var(--app-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      z-index: 100;
+      flex-shrink: 0;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-badge {
+      background: linear-gradient(135deg, #7C4DFF, #448AFF);
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .app-title {
+      font-size: 17px;
+      font-weight: 600;
+      color: #FFF;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .app-subtitle {
+      font-size: 12px;
+      color: var(--app-text-muted);
+      border-left: 1px solid var(--app-border);
+      padding-left: 10px;
+      margin-left: 2px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .action-btn {
+      background: var(--app-surface-2);
+      border: 1px solid var(--app-border);
+      color: var(--app-text);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+    }
+    .action-btn:hover {
+      background: rgba(124, 77, 255, 0.15);
+      border-color: rgba(124, 77, 255, 0.4);
+      color: #FFF;
+    }
+    .action-btn.primary {
+      background: var(--app-accent);
+      border-color: var(--app-accent);
+      color: #FFF;
+    }
+    .action-btn.primary:hover {
+      background: #6c3bee;
+    }
+
+    /* Main Workspace Layout */
+    .workspace {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 56px);
+      overflow: hidden;
+    }
+
+    /* Left / Center: Interactive Viewport Area */
+    .viewport-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at center, #171b26 0%, #0d0f14 100%);
+      position: relative;
+      overflow: hidden;
+      padding: 16px;
+    }
+
+    .viewport-toolbar {
+      position: absolute;
+      top: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(24, 27, 36, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--app-border);
+      padding: 4px 10px;
+      border-radius: 30px;
+      z-index: 50;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }
+
+    .viewport-toolbar button {
+      background: transparent;
+      border: none;
+      color: var(--app-text-muted);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+    .viewport-toolbar button.active {
+      background: var(--app-accent);
+      color: #FFF;
+    }
+
+    /* Simulated Phone Device Frame */
+    .device-frame {
+      width: 392px;
+      height: 780px;
+      border-radius: 46px;
+      background: #000;
+      border: 10px solid #282c37;
+      box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.1);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.3s cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    .device-frame.landscape {
+      width: 780px;
+      height: 392px;
+    }
+
+    .device-frame.freeform {
+      width: 100%;
+      height: 100%;
+      border-radius: 0;
+      border: none;
+      box-shadow: none;
+    }
+
+    /* Phone Camera Punch Hole & Speaker */
+    .device-notch {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90px;
+      height: 24px;
+      background: #000;
+      border-radius: 12px;
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .device-camera {
+      width: 10px;
+      height: 10px;
+      background: #111a2e;
+      border-radius: 50%;
+      border: 1px solid #202b42;
+    }
+
+    /* Status Bar */
+    .device-status-bar {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #FFFFFF;
+      z-index: 100;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    }
+
+    .device-screen {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background-size: cover;
+      background-position: center;
+    }
+
+    /* Screen Backgrounds */
+    .screen-bg-wallpaper {
+      background: linear-gradient(135deg, #1C2331 0%, #2E1A47 40%, #0F3460 70%, #16213E 100%);
+    }
+
+    .screen-bg-home {
+      background: linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.5)), url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="800" viewBox="0 0 400 800"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="%231a237e"/><stop offset="50%" stop-color="%23311b92"/><stop offset="100%" stop-color="%230d47a1"/></linearGradient></defs><rect width="400" height="800" fill="url(%23g)"/><circle cx="200" cy="300" r="180" fill="%237c4dff" opacity="0.15" filter="blur(40px)"/><circle cx="300" cy="600" r="140" fill="%2300b0ff" opacity="0.12" filter="blur(30px)"/></svg>');
+      background-size: cover;
+    }
+
+    .screen-bg-article {
+      background: #F8F9FA;
+      color: #202124;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow-y: auto;
+      height: 100%;
+    }
+
+    .screen-bg-chat {
+      background: #111B21;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 12px;
+      height: 100%;
+    }
+
+    .screen-bg-grid {
+      background-color: #12141C;
+      background-image: 
+        linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+
+    /* Mock App Elements */
+    .mock-widget {
+      padding: 18px;
+      margin: 16px 20px;
+      background: rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(20px);
+      border-radius: 26px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #FFF;
+    }
+    .mock-grid-icons {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      padding: 10px 24px;
+      text-align: center;
+    }
+    .mock-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 6px;
+      color: #FFF;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    .mock-label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.85);
+    }
+
+    /* Chat Mock bubbles */
+    .chat-bubble {
+      max-width: 78%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+    .chat-in {
+      background: #202C33;
+      color: #E9EDEF;
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+    .chat-out {
+      background: #005C4B;
+      color: #E9EDEF;
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+
+    /* Article Mock */
+    .article-header {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1A1A1A;
+      margin-bottom: 12px;
+    }
+    .article-meta {
+      font-size: 12px;
+      color: #70757A;
+      margin-bottom: 16px;
+    }
+    .article-body {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #3C4043;
+      margin-bottom: 14px;
+    }
+    .article-highlight {
+      background: #FEEFC3;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+
+    /* Edge Snapping Visual Guides */
+    .snap-guide {
+      position: absolute;
+      background: var(--app-accent);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease-out;
+      z-index: 900;
+    }
+    .snap-guide.left { left: 0; top: 0; width: 4px; height: 100%; }
+    .snap-guide.right { right: 0; top: 0; width: 4px; height: 100%; }
+    .snap-guide.top { top: 0; left: 0; width: 100%; height: 4px; }
+    .snap-guide.bottom { bottom: 0; left: 0; width: 100%; height: 4px; }
+    .snap-guide.active { opacity: 0.85; box-shadow: 0 0 12px var(--app-accent); }
+
+    /* Point Raycast Targeting Mode Overlay */
+    .point-mode-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(124, 77, 255, 0.08);
+      border: 2px dashed rgba(124, 77, 255, 0.6);
+      pointer-events: none;
+      z-index: 800;
+      display: none;
+    }
+    .point-mode-overlay.active {
+      display: block;
+    }
+    .point-reticle {
+      position: absolute;
+      width: 48px;
+      height: 48px;
+      border: 2px solid #7C4DFF;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      animation: pulseReticle 1.5s infinite;
+    }
+    @keyframes pulseReticle {
+      0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.6; }
+      50% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+      100% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.6; }
+    }
+
+    /* ==========================================================================
+       2. THE FLOATING TOOLBAR COMPONENT UNDER SIMULATION
+       ========================================================================== */
+    .floating-toolbar-wrapper {
+      position: absolute;
+      z-index: 1000;
+      touch-action: none;
+      cursor: grab;
+      padding: 12px;
+      transition: transform 0.22s cubic-bezier(0.1, 0.9, 0.2, 1);
+    }
+    .floating-toolbar-wrapper.is-dragging {
+      cursor: grabbing;
+      transition: none;
+    }
+
+    /* Main Container Surface */
+    .toolbar-surface {
+      background: var(--tb-container-color);
+      color: var(--tb-content-color);
+      border-radius: var(--tb-corner-radius);
+      box-shadow: var(--tb-elevation);
+      border: 1px solid var(--tb-outline-color);
+      backdrop-filter: blur(var(--tb-blur));
+      -webkit-backdrop-filter: blur(var(--tb-blur));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.28s cubic-bezier(0.2, 0, 0, 1);
+      position: relative;
+      overflow: visible;
+    }
+
+    /* Toolbar Layout Orientations */
+    .toolbar-surface.orientation-horizontal {
+      flex-direction: row;
+    }
+    .toolbar-surface.orientation-vertical {
+      flex-direction: column;
+    }
+
+    /* -------------------------------------------------------------
+       A. CONDENSED STATES
+       ------------------------------------------------------------- */
+    .toolbar-surface.condensed {
+      padding: 0;
+    }
+
+    /* Variant: Thin Pill / Bar (Current Android Baseline) */
+    .condensed-pill-bar {
+      width: 64px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+    }
+    .condensed-pill-bar .inner-indicator {
+      width: 42px;
+      height: 4px;
+      border-radius: 999px;
+      background: var(--tb-content-color);
+      opacity: 0.55;
+    }
+
+    /* Variant: App / Brand Icon */
+    .condensed-app-icon {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+    }
+
+    /* Variant: Last Used Icon */
+    .condensed-last-used {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+    }
+
+    /* Variant: Context Icon */
+    .condensed-context-icon {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+    }
+
+    /* Variant: Combo Badge (Last Used + Context Pip) */
+    .condensed-combo {
+      width: 52px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .combo-badge-dot {
+      position: absolute;
+      top: 9px;
+      right: 11px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--md-sys-color-primary);
+      border: 1.5px solid var(--tb-container-color);
+    }
+
+    /* Variant: Dynamic Pill with Mini Info */
+    .condensed-dynamic-pill {
+      height: 38px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+    }
+    .condensed-dynamic-pill span.label {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+
+    /* -------------------------------------------------------------
+       B. EXPANDED STATES & INNER ROWS
+       ------------------------------------------------------------- */
+    .toolbar-surface.expanded {
+      padding: 4px 6px;
+    }
+
+    /* Drag Handle Styles */
+    .drag-handle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      opacity: 0.55;
+      transition: opacity 0.2s;
+    }
+    .drag-handle:hover {
+      opacity: 0.9;
+    }
+    .drag-handle.horizontal-handle {
+      width: 14px;
+      height: 28px;
+      margin-right: 2px;
+    }
+    .drag-handle.vertical-handle {
+      width: 28px;
+      height: 14px;
+      margin-bottom: 2px;
+    }
+    .drag-handle-bar {
+      background: var(--tb-content-color);
+      border-radius: 999px;
+    }
+    .horizontal-handle .drag-handle-bar {
+      width: 3px;
+      height: 16px;
+    }
+    .vertical-handle .drag-handle-bar {
+      width: 16px;
+      height: 3px;
+    }
+
+    /* Icon Buttons (M3 Filled Tonal / Standard Icon Button) */
+    .tb-btn {
+      width: var(--tb-button-size);
+      height: var(--tb-button-size);
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: var(--tb-content-color);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+      margin: 1px;
+      flex-shrink: 0;
+    }
+    .tb-btn .material-symbols-outlined {
+      font-size: var(--tb-icon-size);
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+    }
+    .tb-btn:hover {
+      background: rgba(0, 0, 0, 0.06);
+      transform: scale(1.05);
+    }
+    .tb-btn:active {
+      transform: scale(0.95);
+    }
+    [data-theme="dark"] .tb-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* Active State (M3 Filled Tonal) */
+    .tb-btn.active {
+      background: var(--tb-active-container);
+      color: var(--tb-active-content);
+    }
+    .tb-btn.active .material-symbols-outlined {
+      font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+    }
+
+    /* Button Badges */
+    .btn-badge {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--md-sys-color-primary);
+    }
+
+    /* Divider */
+    .tb-divider {
+      background: var(--tb-outline-color);
+      flex-shrink: 0;
+    }
+    .tb-divider.vertical {
+      width: 1px;
+      height: 24px;
+      margin: 0 4px;
+    }
+    .tb-divider.horizontal {
+      width: 100%;
+      height: 1px;
+      margin: 4px 0;
+    }
+
+    /* Groups Containers */
+    .items-group {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .orientation-vertical .items-group {
+      flex-direction: column;
+    }
+
+    /* -------------------------------------------------------------
+       C. EXPANSION MODES & ANATOMY
+       ------------------------------------------------------------- */
+    /* 1. Block Inline Mode: Unified Card with Stacked Rows */
+    .block-inline-card {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      width: 100%;
+    }
+    .block-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+    }
+
+    /* 2. Flyout Menu Mode: Elevated Popup Card */
+    .flyout-menu-card {
+      position: absolute;
+      background: var(--tb-container-color);
+      color: var(--tb-content-color);
+      border-radius: calc(var(--tb-corner-radius) * 0.85);
+      border: 1px solid var(--tb-outline-color);
+      box-shadow: var(--tb-elevation);
+      backdrop-filter: blur(var(--tb-blur));
+      padding: 4px 6px;
+      z-index: 1010;
+      display: none;
+      animation: flyoutEnter 0.22s cubic-bezier(0.2, 0, 0, 1) forwards;
+    }
+    .flyout-menu-card.visible {
+      display: flex;
+      align-items: center;
+    }
+    .flyout-menu-card.flyout-below {
+      top: calc(100% + 8px);
+      left: 0;
+    }
+    .flyout-menu-card.flyout-above {
+      bottom: calc(100% + 8px);
+      left: 0;
+    }
+    .flyout-menu-card.flyout-right {
+      left: calc(100% + 8px);
+      top: 0;
+      flex-direction: column;
+    }
+    .flyout-menu-card.flyout-left {
+      right: calc(100% + 8px);
+      top: 0;
+      flex-direction: column;
+    }
+
+    @keyframes flyoutEnter {
+      from { opacity: 0; transform: translateY(6px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Navigation Gesture Bar at bottom of screen */
+    .device-nav-bar {
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .device-nav-bar .nav-pill {
+      width: 110px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.45);
+      border-radius: 999px;
+    }
+
+    /* Interactive Output Toast / Action Preview */
+    .action-toast {
+      position: absolute;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(30, 31, 38, 0.96);
+      backdrop-filter: blur(14px);
+      color: #FFF;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 10px 18px;
+      border-radius: 20px;
+      font-size: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+      z-index: 1500;
+      white-space: nowrap;
+    }
+    .action-toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    /* ==========================================================================
+       3. RIGHT SIDEBAR: CONFIGURATION CONTROLS & EXPERIMENTATION LAB
+       ========================================================================== */
+    .control-sidebar {
+      width: 440px;
+      background: var(--app-surface);
+      border-left: 1px solid var(--app-border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    /* Sidebar Navigation Tabs */
+    .sidebar-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--app-border);
+      background: var(--app-surface-2);
+      overflow-x: auto;
+      flex-shrink: 0;
+    }
+    .sidebar-tab-btn {
+      flex: 1;
+      padding: 12px 10px;
+      background: transparent;
+      border: none;
+      color: var(--app-text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+    }
+    .sidebar-tab-btn .material-symbols-outlined {
+      font-size: 20px;
+    }
+    .sidebar-tab-btn:hover {
+      color: #FFF;
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .sidebar-tab-btn.active {
+      color: var(--app-accent);
+      border-bottom-color: var(--app-accent);
+      background: rgba(124, 77, 255, 0.08);
+    }
+
+    .sidebar-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Config Section Cards */
+    .config-card {
+      background: var(--app-surface-2);
+      border: 1px solid var(--app-border);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .config-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--app-text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .config-title .badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(124, 77, 255, 0.2);
+      color: #B388FF;
+      text-transform: none;
+    }
+
+    /* Form Rows & Segmented Controls */
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .control-row-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .control-desc {
+      font-size: 11px;
+      color: var(--app-text-muted);
+      line-height: 1.4;
+    }
+
+    /* Segmented Radio Buttons */
+    .segmented-control {
+      display: flex;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 3px;
+      border-radius: 10px;
+      border: 1px solid var(--app-border);
+      gap: 2px;
+      overflow-x: auto;
+    }
+    .segmented-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--app-text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 6px 8px;
+      border-radius: 7px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.18s ease;
+      white-space: nowrap;
+    }
+    .segmented-btn:hover {
+      color: #FFF;
+    }
+    .segmented-btn.active {
+      background: var(--app-accent);
+      color: #FFF;
+      font-weight: 600;
+      box-shadow: 0 2px 6px rgba(124, 77, 255, 0.35);
+    }
+
+    /* Sliders */
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .slider-container input[type="range"] {
+      flex: 1;
+      accent-color: var(--app-accent);
+      cursor: pointer;
+    }
+    .slider-val {
+      font-size: 12px;
+      font-family: monospace;
+      color: var(--app-accent);
+      width: 44px;
+      text-align: right;
+    }
+
+    /* Preset Buttons Grid */
+    .presets-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    .preset-card-btn {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--app-border);
+      padding: 12px;
+      border-radius: 10px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s;
+    }
+    .preset-card-btn:hover {
+      background: rgba(124, 77, 255, 0.12);
+      border-color: rgba(124, 77, 255, 0.4);
+      transform: translateY(-1px);
+    }
+    .preset-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #FFF;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+    .preset-desc {
+      font-size: 11px;
+      color: var(--app-text-muted);
+      line-height: 1.4;
+    }
+
+    /* Code Inspector Container */
+    .code-box {
+      background: #090B10;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #A5D6FF;
+      overflow-x: auto;
+      max-height: 240px;
+      white-space: pre;
+    }
+
+    /* Helper Badges */
+    .status-pill {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: rgba(30, 215, 96, 0.15);
+      color: #1ED760;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <span class="brand-badge">Simulator Lab</span>
+      <div class="app-title">
+        <span class="material-symbols-outlined" style="color: var(--app-accent);">tune</span>
+        Floating Toolbar Layout & Behavior Studio
+      </div>
+      <div class="app-subtitle">Capture Engine Overlay Experimenter</div>
+    </div>
+    <div class="header-actions">
+      <button class="action-btn" id="btnToggleState">
+        <span class="material-symbols-outlined" id="stateBtnIcon">expand_content</span>
+        <span id="stateBtnText">Expand Toolbar</span>
+      </button>
+      <button class="action-btn" id="btnResetPosition">
+        <span class="material-symbols-outlined">restart_alt</span>
+        <span>Center Toolbar</span>
+      </button>
+      <button class="action-btn primary" id="btnExportKotlin">
+        <span class="material-symbols-outlined">code</span>
+        <span>Copy Compose Code</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Workspace Container -->
+  <div class="workspace">
+
+    <!-- Center: Interactive Simulated Device Screen -->
+    <div class="viewport-area">
+
+      <!-- Viewport Environment Switcher -->
+      <div class="viewport-toolbar">
+        <button class="active" data-scene="home">
+          <span class="material-symbols-outlined" style="font-size: 16px;">home</span> Home
+        </button>
+        <button data-scene="article">
+          <span class="material-symbols-outlined" style="font-size: 16px;">article</span> Article
+        </button>
+        <button data-scene="chat">
+          <span class="material-symbols-outlined" style="font-size: 16px;">chat</span> Chat
+        </button>
+        <button data-scene="grid">
+          <span class="material-symbols-outlined" style="font-size: 16px;">grid_4x4</span> Grid
+        </button>
+        <div style="width: 1px; height: 16px; background: var(--app-border); margin: 0 4px;"></div>
+        <button id="btnToggleOrientation">
+          <span class="material-symbols-outlined" style="font-size: 16px;">screen_rotation</span> Device Flip
+        </button>
+      </div>
+
+      <!-- Phone Frame Container -->
+      <div class="device-frame" id="deviceFrame">
+        <!-- Punch Hole Camera & Speaker -->
+        <div class="device-notch">
+          <div class="device-camera"></div>
+        </div>
+
+        <!-- Phone Status Bar -->
+        <div class="device-status-bar">
+          <span id="mockClock">09:41</span>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="material-symbols-outlined" style="font-size: 16px;">signal_cellular_alt</span>
+            <span class="material-symbols-outlined" style="font-size: 16px;">wifi</span>
+            <span class="material-symbols-outlined" style="font-size: 18px;">battery_full</span>
+          </div>
+        </div>
+
+        <!-- Phone Active Screen Canvas -->
+        <div class="device-screen screen-bg-home" id="deviceScreen">
+
+          <!-- Edge Magnetic Snapping Guides -->
+          <div class="snap-guide left" id="snapLeft"></div>
+          <div class="snap-guide right" id="snapRight"></div>
+          <div class="snap-guide top" id="snapTop"></div>
+          <div class="snap-guide bottom" id="snapBottom"></div>
+
+          <!-- Point Selection Reticle Overlay -->
+          <div class="point-mode-overlay" id="pointModeOverlay">
+            <div class="point-reticle" style="top: 45%; left: 50%;"></div>
+            <div style="position: absolute; top: 40px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: #FFF; padding: 6px 14px; border-radius: 16px; font-size: 11px; font-weight: 500;">
+              Tap anywhere to select UI Raycast Target
+            </div>
+          </div>
+
+          <!-- Background Scene Mock Elements -->
+          <div id="sceneContainerHome">
+            <div class="mock-widget">
+              <div style="font-size: 26px; font-weight: 700; margin-bottom: 2px;">Monday, Oct 24</div>
+              <div style="font-size: 13px; opacity: 0.85;">21°C Mostly Sunny • London</div>
+            </div>
+            <div class="mock-grid-icons">
+              <div><div class="mock-icon"><span class="material-symbols-outlined">mail</span></div><div class="mock-label">Gmail</div></div>
+              <div><div class="mock-icon"><span class="material-symbols-outlined">chat</span></div><div class="mock-label">Messages</div></div>
+              <div><div class="mock-icon"><span class="material-symbols-outlined">photo_camera</span></div><div class="mock-label">Camera</div></div>
+              <div><div class="mock-icon"><span class="material-symbols-outlined">explore</span></div><div class="mock-label">Chrome</div></div>
+              <div><div class="mock-icon"><span class="material-symbols-outlined">play_circle</span></div><div class="mock-label">YouTube</div></div>
+              <div><div class="mock-icon"><span class="material-symbols-outlined">music_note</span></div><div class="mock-label">Spotify</div></div>
+              <div><div class="mock-icon"><span class="material-symbols-outlined">settings</span></div><div class="mock-label">Settings</div></div>
+              <div><div class="mock-icon"><span class="material-symbols-outlined">folder</span></div><div class="mock-label">Files</div></div>
+            </div>
+          </div>
+
+          <!-- Scene Container: Article (Hidden by default) -->
+          <div id="sceneContainerArticle" style="display: none;" class="screen-bg-article">
+            <div class="article-header">Next-Gen AI Context Pipelines in Android OS</div>
+            <div class="article-meta">Published 10 mins ago • 4 min read</div>
+            <div class="article-body">
+              Modern mobile intelligence demands continuous contextual awareness without sacrificing user privacy or device performance.
+            </div>
+            <div class="article-body">
+              By combining standard Android accessibility node parsing with media projection buffers, the <span class="article-highlight">Capture Engine extracts semantic UI hierarchies</span> and passes rich context into downstream agent webhooks.
+            </div>
+            <div class="article-body">
+              Users can trigger captures seamlessly via speech transcription, audio waveforms, or quick clipboard pastes while keeping full control over active context toggles.
+            </div>
+          </div>
+
+          <!-- Scene Container: Chat (Hidden by default) -->
+          <div id="sceneContainerChat" style="display: none;" class="screen-bg-chat">
+            <div class="chat-bubble chat-in">Hey Josh, did you test the new edge-docking toolbar on the device?</div>
+            <div class="chat-bubble chat-out">Yes! Testing the new block inline layout right now with the cross-axis expansion.</div>
+            <div class="chat-bubble chat-in">Awesome. Make sure the context sources stay sticky when dragging across apps.</div>
+            <div class="chat-bubble chat-out">Confirmed. Raycasting point selection also works smoothly over the UI tree.</div>
+          </div>
+
+          <!-- Scene Container: Grid (Empty for clear viewing) -->
+          <div id="sceneContainerGrid" style="display: none;"></div>
+
+          <!-- =========================================================
+               THE FLOATING TOOLBAR UNDER SIMULATION
+               ========================================================= -->
+          <div class="floating-toolbar-wrapper" id="floatingToolbarWrapper" style="left: 60px; top: 380px;">
+            
+            <!-- Surface Container -->
+            <div class="toolbar-surface condensed orientation-horizontal" id="toolbarSurface" title="Drag to move, click to toggle">
+              
+              <!-- Content rendered dynamically via JavaScript based on active configuration -->
+              <div id="toolbarDynamicContent"></div>
+
+            </div>
+
+            <!-- Detached Flyout Menu (used when Expansion Mode = Flyout) -->
+            <div class="flyout-menu-card flyout-below" id="flyoutMenuCard">
+              <div class="items-group" id="flyoutContent"></div>
+            </div>
+
+          </div>
+
+          <!-- Action Notification Toast / Bottom Payload Inspector -->
+          <div class="action-toast" id="actionToast">
+            <span class="material-symbols-outlined" style="color: var(--app-accent);" id="toastIcon">check_circle</span>
+            <span id="toastMessage">Capture Payload Triggered</span>
+          </div>
+
+        </div>
+
+        <!-- Phone Gesture Navigation Bar -->
+        <div class="device-nav-bar">
+          <div class="nav-pill"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right: Comprehensive Control & Customization Sidebar -->
+    <aside class="control-sidebar">
+      
+      <!-- Tab Headers -->
+      <nav class="sidebar-tabs">
+        <button class="sidebar-tab-btn active" data-tab="tab-layout">
+          <span class="material-symbols-outlined">dashboard</span>
+          <span>Layout</span>
+        </button>
+        <button class="sidebar-tab-btn" data-tab="tab-expansion">
+          <span class="material-symbols-outlined">open_in_full</span>
+          <span>Expansion</span>
+        </button>
+        <button class="sidebar-tab-btn" data-tab="tab-physics">
+          <span class="material-symbols-outlined">drag_pan</span>
+          <span>Physics</span>
+        </button>
+        <button class="sidebar-tab-btn" data-tab="tab-style">
+          <span class="material-symbols-outlined">palette</span>
+          <span>M3 Style</span>
+        </button>
+        <button class="sidebar-tab-btn" data-tab="tab-presets">
+          <span class="material-symbols-outlined">auto_awesome</span>
+          <span>Presets</span>
+        </button>
+      </nav>
+
+      <!-- Tab Content Panels -->
+      <div class="sidebar-content">
+
+        <!-- =========================================================
+             TAB 1: LAYOUT & DISPLAY STATES
+             ========================================================= -->
+        <div class="tab-panel active" id="tab-layout">
+          
+          <!-- State Switcher -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Current Toolbar State</span>
+              <span class="status-pill" id="currentStatusBadge">Condensed</span>
+            </div>
+            <div class="segmented-control" id="controlToolbarState">
+              <button class="segmented-btn active" data-value="condensed">Condensed (Collapsed)</button>
+              <button class="segmented-btn" data-value="expanded">Expanded</button>
+            </div>
+          </div>
+
+          <!-- Condensed Display Content Option -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Condensed View Display</span>
+              <span class="badge">Collapsed State</span>
+            </div>
+            <div class="control-desc">Choose what icon or indicator displays when the toolbar is collapsed:</div>
+            <div class="segmented-control" id="controlCondensedContent" style="flex-wrap: wrap;">
+              <button class="segmented-btn active" data-value="pill_bar" title="Thin semi-transparent bar">Thin Bar</button>
+              <button class="segmented-btn" data-value="app_icon" title="App / Capture Logo">App Icon</button>
+              <button class="segmented-btn" data-value="last_used" title="Only Last Used Input icon">Last Used</button>
+              <button class="segmented-btn" data-value="context_icon" title="Current Context status icon">Context Icon</button>
+              <button class="segmented-btn" data-value="combo" title="Last Used + Active Context pip">Combo (Both)</button>
+              <button class="segmented-btn" data-value="dynamic_pill" title="Pill with Last Used + label">Mini Pill</button>
+            </div>
+          </div>
+
+          <!-- Expanded Display Content Option -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Expanded View Display</span>
+              <span class="badge">Expanded State</span>
+            </div>
+            <div class="control-desc">Choose which sections are displayed in the expanded container:</div>
+            <div class="segmented-control" id="controlExpandedContent">
+              <button class="segmented-btn active" data-value="full">Full (Inputs + Context)</button>
+              <button class="segmented-btn" data-value="inputs_only">Inputs Only</button>
+              <button class="segmented-btn" data-value="contexts_only">Context Only</button>
+              <button class="segmented-btn" data-value="last_used_menu">Last Used + Menu</button>
+            </div>
+          </div>
+
+          <!-- Orientation -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Expanded Orientation</span>
+              <span class="badge">Primary Axis</span>
+            </div>
+            <div class="segmented-control" id="controlOrientation">
+              <button class="segmented-btn active" data-value="horizontal">Horizontal (Row)</button>
+              <button class="segmented-btn" data-value="vertical">Vertical (Column)</button>
+            </div>
+          </div>
+
+          <!-- Drag Handle -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Drag Handle</span>
+              <span class="badge">Ergonomics</span>
+            </div>
+            <div class="segmented-control" id="controlDragHandle">
+              <button class="segmented-btn active" data-value="leading">Leading Handle</button>
+              <button class="segmented-btn" data-value="trailing">Trailing Handle</button>
+              <button class="segmented-btn" data-value="none">None (Full Surface)</button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- =========================================================
+             TAB 2: EXPANSION MODES & ANATOMY
+             ========================================================= -->
+        <div class="tab-panel" id="tab-expansion" style="display: none;">
+          
+          <!-- Expansion Mode: Inline vs Flyout vs Block Inline -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Expansion Mode</span>
+              <span class="badge">Architecture</span>
+            </div>
+            <div class="control-desc">How the toolbar opens and containers unfold:</div>
+            <div class="segmented-control" id="controlExpansionMode">
+              <button class="segmented-btn active" data-value="inline" title="Expands in single continuous container">Inline</button>
+              <button class="segmented-btn" data-value="flyout" title="Main bar stationary, elevated flyout appears">Flyout</button>
+              <button class="segmented-btn" data-value="block_inline" title="Expands into multi-row/column unified card">Block Inline</button>
+            </div>
+          </div>
+
+          <!-- Block Inline / Context Position: Above or Below -->
+          <div class="config-card" id="cardBlockInlinePosition">
+            <div class="config-title">
+              <span>Block Inline / Flyout Position</span>
+              <span class="badge">Stacking</span>
+            </div>
+            <div class="control-desc">Relative placement of the Context Sources section:</div>
+            <div class="segmented-control" id="controlBlockPosition">
+              <button class="segmented-btn" data-value="above">Above Input Row</button>
+              <button class="segmented-btn active" data-value="below">Below Input Row</button>
+            </div>
+          </div>
+
+          <!-- Expansion Axis: Same Axis vs Cross Axis -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Expansion Axis</span>
+              <span class="badge">Motion Flow</span>
+            </div>
+            <div class="control-desc">Direction in which elements unfold relative to primary orientation:</div>
+            <div class="segmented-control" id="controlExpansionAxis">
+              <button class="segmented-btn active" data-value="same_axis">Same Axis</button>
+              <button class="segmented-btn" data-value="cross_axis">Cross Axis (Perpendicular)</button>
+            </div>
+          </div>
+
+          <!-- Group Expansion: Together vs Apart -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Input & Context Expansion</span>
+              <span class="badge">Hierarchy</span>
+            </div>
+            <div class="control-desc">Whether both groups open in one step or in multi-tier stages:</div>
+            <div class="segmented-control" id="controlGroupExpansion">
+              <button class="segmented-btn" data-value="together">Together (All at once)</button>
+              <button class="segmented-btn active" data-value="apart">Apart (Independent via Menu)</button>
+            </div>
+          </div>
+
+          <!-- Animation Speed Slider -->
+          <div class="config-card">
+            <div class="control-row-header">
+              <span>Motion Transition Duration</span>
+              <span class="slider-val" id="valAnimSpeed">280ms</span>
+            </div>
+            <div class="slider-container">
+              <input type="range" id="sliderAnimSpeed" min="100" max="600" step="20" value="280" />
+            </div>
+          </div>
+
+        </div>
+
+        <!-- =========================================================
+             TAB 3: PHYSICS, MOVEMENT & DOCKING
+             ========================================================= -->
+        <div class="tab-panel" id="tab-physics" style="display: none;">
+          
+          <!-- Movement Behavior -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Movement Behavior</span>
+              <span class="badge">Interaction</span>
+            </div>
+            <div class="control-desc">Determine dragging physics and edge behavior:</div>
+            <div class="segmented-control" id="controlMoveMode">
+              <button class="segmented-btn" data-value="movable">Movable (Free float)</button>
+              <button class="segmented-btn active" data-value="dockable">Dockable (Snap to edge)</button>
+              <button class="segmented-btn" data-value="locked">Locked (Fixed)</button>
+            </div>
+          </div>
+
+          <!-- Edge Snapping Distance Threshold -->
+          <div class="config-card">
+            <div class="control-row-header">
+              <span>Magnetic Snapping Threshold</span>
+              <span class="slider-val" id="valSnapDist">45px</span>
+            </div>
+            <div class="control-desc">Distance from screen border where magnetic snap triggers:</div>
+            <div class="slider-container">
+              <input type="range" id="sliderSnapDist" min="15" max="100" step="5" value="45" />
+            </div>
+          </div>
+
+          <!-- Edge Tab Notch Collapse Option -->
+          <div class="config-card">
+            <div class="control-row-header">
+              <span>Auto-Condense to Edge Tab</span>
+              <input type="checkbox" id="checkEdgeTabCollapse" checked style="accent-color: var(--app-accent); transform: scale(1.2);" />
+            </div>
+            <div class="control-desc">
+              When docked to the left or right edge, collapse into a minimal edge tab/notch hugging the border.
+            </div>
+          </div>
+
+          <!-- Quick Align / Snap Test Buttons -->
+          <div class="config-card">
+            <div class="config-title"><span>Quick Snap Shortcuts</span></div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+              <button class="action-btn" onclick="quickSnap('top-left')">Top Left</button>
+              <button class="action-btn" onclick="quickSnap('top')">Top Center</button>
+              <button class="action-btn" onclick="quickSnap('top-right')">Top Right</button>
+              <button class="action-btn" onclick="quickSnap('left')">Mid Left</button>
+              <button class="action-btn" onclick="quickSnap('center')">Center</button>
+              <button class="action-btn" onclick="quickSnap('right')">Mid Right</button>
+              <button class="action-btn" onclick="quickSnap('bottom-left')">Bottom Left</button>
+              <button class="action-btn" onclick="quickSnap('bottom')">Bottom Center</button>
+              <button class="action-btn" onclick="quickSnap('bottom-right')">Bottom Right</button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- =========================================================
+             TAB 4: MATERIAL 3 THEME & STYLES
+             ========================================================= -->
+        <div class="tab-panel" id="tab-style" style="display: none;">
+          
+          <!-- Color Role / Theme Preset -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Color Role / Seed Palette</span>
+              <span class="badge">Material You</span>
+            </div>
+            <div class="segmented-control" id="controlColorRole" style="flex-wrap: wrap;">
+              <button class="segmented-btn active" data-value="primary">Primary (Purple)</button>
+              <button class="segmented-btn" data-value="tertiary">Tertiary (Rose)</button>
+              <button class="segmented-btn" data-value="surface">Neutral Surface</button>
+              <button class="segmented-btn" data-value="teal">Teal Expressive</button>
+              <button class="segmented-btn" data-value="amber">Warm Amber</button>
+            </div>
+          </div>
+
+          <!-- Dark / Light Theme Mode -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Theme Mode</span>
+              <span class="badge">Luminance</span>
+            </div>
+            <div class="segmented-control" id="controlThemeMode">
+              <button class="segmented-btn active" data-value="light">M3 Light</button>
+              <button class="segmented-btn" data-value="dark">M3 Dark</button>
+            </div>
+          </div>
+
+          <!-- Surface Alpha / Opacity -->
+          <div class="config-card">
+            <div class="control-row-header">
+              <span>Surface Opacity (Alpha)</span>
+              <span class="slider-val" id="valAlpha">94%</span>
+            </div>
+            <div class="slider-container">
+              <input type="range" id="sliderAlpha" min="30" max="100" step="2" value="94" />
+            </div>
+          </div>
+
+          <!-- Corner Radius -->
+          <div class="config-card">
+            <div class="control-row-header">
+              <span>Corner Radius</span>
+              <span class="slider-val" id="valCorner">28px</span>
+            </div>
+            <div class="slider-container">
+              <input type="range" id="sliderCorner" min="8" max="32" step="2" value="28" />
+            </div>
+          </div>
+
+          <!-- Button Size -->
+          <div class="config-card">
+            <div class="control-row-header">
+              <span>Icon Button Size</span>
+              <span class="slider-val" id="valBtnSize">40px</span>
+            </div>
+            <div class="slider-container">
+              <input type="range" id="sliderBtnSize" min="32" max="48" step="2" value="40" />
+            </div>
+          </div>
+
+        </div>
+
+        <!-- =========================================================
+             TAB 5: PRESETS & KOTLIN CODE GENERATOR
+             ========================================================= -->
+        <div class="tab-panel" id="tab-presets" style="display: none;">
+          
+          <div class="config-card">
+            <div class="config-title">
+              <span>Preset Combinations</span>
+              <span class="badge">1-Click Setup</span>
+            </div>
+            <div class="presets-grid">
+              
+              <!-- Preset 1 -->
+              <div class="preset-card-btn" onclick="applyPreset('android_baseline')">
+                <div class="preset-name">
+                  <span class="material-symbols-outlined" style="color: #6750A4;">android</span>
+                  Current Android Baseline
+                </div>
+                <div class="preset-desc">
+                  Thin pill bar when condensed, horizontal row when expanded with detached flyout below for context sources.
+                </div>
+              </div>
+
+              <!-- Preset 2 -->
+              <div class="preset-card-btn" onclick="applyPreset('samsung_edge')">
+                <div class="preset-name">
+                  <span class="material-symbols-outlined" style="color: #00B0FF;">side_navigation</span>
+                  Samsung Edge Panel Style
+                </div>
+                <div class="preset-desc">
+                  Vertical bar docked to right border, cross-axis horizontal expansion, combo badge in condensed state.
+                </div>
+              </div>
+
+              <!-- Preset 3 -->
+              <div class="preset-card-btn" onclick="applyPreset('dynamic_island')">
+                <div class="preset-name">
+                  <span class="material-symbols-outlined" style="color: #7C4DFF;">pill</span>
+                  Dynamic Island Header Pill
+                </div>
+                <div class="preset-desc">
+                  Top-centered mini pill showing last used input, expanding cross-axis downward into a unified dual-row card.
+                </div>
+              </div>
+
+              <!-- Preset 4 -->
+              <div class="preset-card-btn" onclick="applyPreset('m3_expressive_card')">
+                <div class="preset-name">
+                  <span class="material-symbols-outlined" style="color: #E91E63;">layers</span>
+                  M3 Expressive Card (Above)
+                </div>
+                <div class="preset-desc">
+                  Unified block inline card with Context Sources row stacked above the Input Selection row.
+                </div>
+              </div>
+
+              <!-- Preset 5 -->
+              <div class="preset-card-btn" onclick="applyPreset('minimal_fab')">
+                <div class="preset-name">
+                  <span class="material-symbols-outlined" style="color: #00C853;">radio_button_checked</span>
+                  Minimalist Circular FAB
+                </div>
+                <div class="preset-desc">
+                  Single circular floating trigger displaying Last Used icon, expanding all groups together on tap.
+                </div>
+              </div>
+
+              <!-- Preset 6 -->
+              <div class="preset-card-btn" onclick="applyPreset('locked_edge_dock')">
+                <div class="preset-name">
+                  <span class="material-symbols-outlined" style="color: #FF9100;">lock</span>
+                  Locked Left Edge Strip
+                </div>
+                <div class="preset-desc">
+                  Locked vertical bar flush against screen left edge, with inline vertical expansion.
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Live Kotlin Compose Configuration Output -->
+          <div class="config-card">
+            <div class="config-title">
+              <span>Kotlin Compose Code Preview</span>
+              <button class="action-btn" style="padding: 2px 8px; font-size: 11px;" onclick="copyKotlinCode()">
+                Copy Code
+              </button>
+            </div>
+            <div class="code-box" id="kotlinCodeOutput">// Live Generated Kotlin Compose Configuration</div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </aside>
+
+  </div>
+
+  <!-- ==========================================================================
+       4. SIMULATOR CONTROLLER JAVASCRIPT LOGIC
+       ========================================================================== -->
+  <script>
+    /* -------------------------------------------------------------
+       STATE MODEL: All toolbar settings & combinations
+       ------------------------------------------------------------- */
+    const state = {
+      // Toolbar Expanded vs Condensed
+      isExpanded: false,
+      
+      // Condensed View Option: 'pill_bar' | 'app_icon' | 'last_used' | 'context_icon' | 'combo' | 'dynamic_pill'
+      condensedContent: 'pill_bar',
+      
+      // Expanded View Option: 'full' | 'inputs_only' | 'contexts_only' | 'last_used_menu'
+      expandedContent: 'full',
+      
+      // Expansion Mode: 'inline' | 'flyout' | 'block_inline'
+      expansionMode: 'flyout',
+      
+      // Block Inline / Flyout Position: 'above' | 'below'
+      blockPosition: 'below',
+      
+      // Expansion Axis: 'same_axis' | 'cross_axis'
+      expansionAxis: 'same_axis',
+      
+      // Group Expansion: 'together' | 'apart'
+      groupExpansion: 'apart',
+      isMenuFlyoutOpen: false, // sub-menu state when groupExpansion === 'apart'
+      
+      // Orientation: 'horizontal' | 'vertical'
+      orientation: 'horizontal',
+      
+      // Drag Handle: 'leading' | 'trailing' | 'none'
+      dragHandle: 'leading',
+      
+      // Movement & Docking: 'movable' | 'dockable' | 'locked'
+      moveMode: 'dockable',
+      snapDistance: 45,
+      autoEdgeTabCollapse: true,
+      
+      // Theme & M3 Styling
+      colorRole: 'primary',
+      themeMode: 'light',
+      alpha: 0.94,
+      cornerRadius: 28,
+      buttonSize: 40,
+      animSpeed: 280,
+
+      // Simulated Inputs & Context States
+      lastUsedInput: 'speech_to_text', // 'speech_to_text' | 'mic_audio' | 'clipboard_paste' | 'text_snippet'
+      isPointModeActive: false,
+      contextSources: {
+        screenGrab: true,
+        appTree: true,
+        highlightedText: true,
+        media: true
+      },
+
+      // Position tracking
+      pos: { x: 50, y: 360 }
+    };
+
+    /* Available Inputs Definition */
+    const inputDefinitions = [
+      { id: 'speech_to_text', icon: 'record_voice_over', label: 'Dictate', desc: 'Native Voice Transcription' },
+      { id: 'mic_audio', icon: 'mic', label: 'Record', desc: 'Raw Audio Waveform' },
+      { id: 'clipboard_paste', icon: 'content_paste', label: 'Paste', desc: 'Clipboard Text Buffer' },
+      { id: 'text_snippet', icon: 'keyboard', label: 'Type', desc: 'Manual Input' }
+    ];
+
+    /* DOM Element References */
+    const wrapperEl = document.getElementById('floatingToolbarWrapper');
+    const surfaceEl = document.getElementById('toolbarSurface');
+    const dynamicContentEl = document.getElementById('toolbarDynamicContent');
+    const flyoutMenuEl = document.getElementById('flyoutMenuCard');
+    const flyoutContentEl = document.getElementById('flyoutContent');
+    const deviceScreenEl = document.getElementById('deviceScreen');
+    const deviceFrameEl = document.getElementById('deviceFrame');
+    const pointOverlayEl = document.getElementById('pointModeOverlay');
+    const toastEl = document.getElementById('actionToast');
+    const toastMsgEl = document.getElementById('toastMessage');
+    const toastIconEl = document.getElementById('toastIcon');
+
+    /* Snapping guides */
+    const snapLeftEl = document.getElementById('snapLeft');
+    const snapRightEl = document.getElementById('snapRight');
+    const snapTopEl = document.getElementById('snapTop');
+    const snapBottomEl = document.getElementById('snapBottom');
+
+    /* Status Header buttons */
+    const btnToggleState = document.getElementById('btnToggleState');
+    const stateBtnIcon = document.getElementById('stateBtnIcon');
+    const stateBtnText = document.getElementById('stateBtnText');
+    const currentStatusBadge = document.getElementById('currentStatusBadge');
+
+    /* -------------------------------------------------------------
+       RENDER LOGIC: Generates DOM elements inside toolbar surface
+       ------------------------------------------------------------- */
+    function renderToolbar() {
+      // 1. Apply Orientation & State Classes
+      surfaceEl.className = 'toolbar-surface';
+      surfaceEl.classList.add(state.isExpanded ? 'expanded' : 'condensed');
+      surfaceEl.classList.add(`orientation-${state.orientation}`);
+      
+      // Update header toggle button
+      if (state.isExpanded) {
+        stateBtnIcon.textContent = 'collapse_content';
+        stateBtnText.textContent = 'Collapse Toolbar';
+        currentStatusBadge.textContent = 'Expanded';
+        currentStatusBadge.style.color = '#7C4DFF';
+      } else {
+        stateBtnIcon.textContent = 'expand_content';
+        stateBtnText.textContent = 'Expand Toolbar';
+        currentStatusBadge.textContent = 'Condensed';
+        currentStatusBadge.style.color = '#1ED760';
+      }
+
+      // 2. Clear content
+      dynamicContentEl.innerHTML = '';
+      flyoutMenuEl.classList.remove('visible');
+
+      // -----------------------------------------------------------
+      // CASE A: CONDENSED STATE
+      // -----------------------------------------------------------
+      if (!state.isExpanded) {
+        const lastInput = inputDefinitions.find(i => i.id === state.lastUsedInput) || inputDefinitions[0];
+        
+        switch (state.condensedContent) {
+          case 'pill_bar': {
+            const bar = document.createElement('div');
+            bar.className = 'condensed-pill-bar';
+            bar.innerHTML = '<div class="inner-indicator"></div>';
+            dynamicContentEl.appendChild(bar);
+            break;
+          }
+          case 'app_icon': {
+            const iconWrap = document.createElement('div');
+            iconWrap.className = 'condensed-app-icon';
+            iconWrap.innerHTML = '<span class="material-symbols-outlined" style="font-size: 26px; color: var(--md-sys-color-primary);">capture</span>';
+            dynamicContentEl.appendChild(iconWrap);
+            break;
+          }
+          case 'last_used': {
+            const iconWrap = document.createElement('div');
+            iconWrap.className = 'condensed-last-used';
+            iconWrap.innerHTML = `<span class="material-symbols-outlined" style="font-size: 24px;">${lastInput.icon}</span>`;
+            dynamicContentEl.appendChild(iconWrap);
+            break;
+          }
+          case 'context_icon': {
+            const iconWrap = document.createElement('div');
+            iconWrap.className = 'condensed-context-icon';
+            const ctxIcon = state.isPointModeActive ? 'ads_click' : 'mobile_friendly';
+            iconWrap.innerHTML = `<span class="material-symbols-outlined" style="font-size: 24px; color: ${state.isPointModeActive ? 'var(--md-sys-color-primary)' : 'inherit'};">${ctxIcon}</span>`;
+            dynamicContentEl.appendChild(iconWrap);
+            break;
+          }
+          case 'combo': {
+            const comboWrap = document.createElement('div');
+            comboWrap.className = 'condensed-combo';
+            comboWrap.innerHTML = `
+              <span class="material-symbols-outlined" style="font-size: 24px;">${lastInput.icon}</span>
+              <div class="combo-badge-dot"></div>
+            `;
+            dynamicContentEl.appendChild(comboWrap);
+            break;
+          }
+          case 'dynamic_pill': {
+            const pillWrap = document.createElement('div');
+            pillWrap.className = 'condensed-dynamic-pill';
+            pillWrap.innerHTML = `
+              <span class="material-symbols-outlined" style="font-size: 20px; color: var(--md-sys-color-primary);">${lastInput.icon}</span>
+              <span class="label">${lastInput.label}</span>
+            `;
+            dynamicContentEl.appendChild(pillWrap);
+            break;
+          }
+        }
+
+        // Clicking condensed surface toggles expansion
+        surfaceEl.onclick = (e) => {
+          if (!state.isDraggingAction) {
+            toggleToolbarExpansion();
+          }
+        };
+        return;
+      }
+
+      // -----------------------------------------------------------
+      // CASE B: EXPANDED STATE
+      // -----------------------------------------------------------
+      surfaceEl.onclick = null; // direct buttons handle their own clicks
+
+      // Drag Handle (Leading)
+      if (state.dragHandle === 'leading') {
+        dynamicContentEl.appendChild(createDragHandleElement());
+      }
+
+      // Check if Mode is "Block Inline"
+      if (state.expansionMode === 'block_inline') {
+        renderBlockInlineMode();
+      } else {
+        renderStandardRowMode();
+      }
+
+      // Drag Handle (Trailing)
+      if (state.dragHandle === 'trailing') {
+        dynamicContentEl.appendChild(createDragHandleElement());
+      }
+
+      // Update Kotlin Code Output
+      updateKotlinCode();
+    }
+
+    /* Helper: Drag Handle Component */
+    function createDragHandleElement() {
+      const handle = document.createElement('div');
+      handle.className = `drag-handle ${state.orientation === 'horizontal' ? 'horizontal-handle' : 'vertical-handle'}`;
+      handle.innerHTML = '<div class="drag-handle-bar"></div>';
+      return handle;
+    }
+
+    /* Helper: Render Standard Row (used for Inline and Flyout modes) */
+    function renderStandardRowMode() {
+      const mainRow = document.createElement('div');
+      mainRow.className = 'items-group';
+
+      // 1. Input Modality Icons
+      if (state.expandedContent === 'full' || state.expandedContent === 'inputs_only') {
+        inputDefinitions.forEach(input => {
+          const btn = createIconButton(input.icon, input.label, false, false, () => {
+            selectInput(input.id);
+          });
+          mainRow.appendChild(btn);
+        });
+      } else if (state.expandedContent === 'last_used_menu') {
+        const lastInput = inputDefinitions.find(i => i.id === state.lastUsedInput) || inputDefinitions[0];
+        const btn = createIconButton(lastInput.icon, lastInput.label, false, false, () => {
+          selectInput(lastInput.id);
+        });
+        mainRow.appendChild(btn);
+      }
+
+      // 2. Context Controls & Sources
+      if (state.expandedContent === 'full' || state.expandedContent === 'contexts_only') {
+        
+        // Mode: Flyout or Apart?
+        if (state.expansionMode === 'flyout' || state.groupExpansion === 'apart') {
+          // Add Divider
+          mainRow.appendChild(createDivider(state.orientation === 'horizontal' ? 'vertical' : 'horizontal'));
+          
+          // Context Sub-menu Toggle Button (Hamburger)
+          const menuBtn = createIconButton('menu', 'Context Sources', state.isMenuFlyoutOpen, hasActiveContextSources(), () => {
+            state.isMenuFlyoutOpen = !state.isMenuFlyoutOpen;
+            renderFlyoutMenu();
+          });
+          mainRow.appendChild(menuBtn);
+
+          // Render flyout if currently open
+          if (state.isMenuFlyoutOpen) {
+            renderFlyoutMenu();
+          }
+        } else {
+          // Expansion Mode: Inline Together
+          mainRow.appendChild(createDivider(state.orientation === 'horizontal' ? 'vertical' : 'horizontal'));
+          
+          // Render context strip right inline
+          const ctxStrip = createContextElements();
+          ctxStrip.forEach(el => mainRow.appendChild(el));
+        }
+      }
+
+      // Close / Collapse action button
+      mainRow.appendChild(createDivider(state.orientation === 'horizontal' ? 'vertical' : 'horizontal'));
+      const closeBtn = createIconButton('close_fullscreen', 'Collapse', false, false, () => {
+        toggleToolbarExpansion(false);
+      });
+      mainRow.appendChild(closeBtn);
+
+      dynamicContentEl.appendChild(mainRow);
+    }
+
+    /* Helper: Render Block Inline Mode (Unified Multi-Row Card) */
+    function renderBlockInlineMode() {
+      const card = document.createElement('div');
+      card.className = 'block-inline-card';
+
+      // Group 1: Inputs Row
+      const inputRow = document.createElement('div');
+      inputRow.className = 'block-row';
+      inputDefinitions.forEach(input => {
+        inputRow.appendChild(createIconButton(input.icon, input.label, false, false, () => {
+          selectInput(input.id);
+        }));
+      });
+
+      // Group 2: Context Sources Row
+      const contextRow = document.createElement('div');
+      contextRow.className = 'block-row';
+      const ctxElements = createContextElements();
+      ctxElements.forEach(el => contextRow.appendChild(el));
+
+      // Divider
+      const div = createDivider('horizontal');
+
+      // Placement: Above vs Below
+      if (state.blockPosition === 'above') {
+        card.appendChild(contextRow);
+        card.appendChild(div);
+        card.appendChild(inputRow);
+      } else {
+        card.appendChild(inputRow);
+        card.appendChild(div);
+        card.appendChild(contextRow);
+      }
+
+      dynamicContentEl.appendChild(card);
+    }
+
+    /* Helper: Render Flyout Card */
+    function renderFlyoutMenu() {
+      flyoutContentEl.innerHTML = '';
+      const ctxElements = createContextElements();
+      ctxElements.forEach(el => flyoutContentEl.appendChild(el));
+
+      // Set placement class
+      flyoutMenuEl.className = 'flyout-menu-card visible';
+      
+      if (state.orientation === 'vertical') {
+        flyoutMenuEl.classList.add(state.pos.x > 180 ? 'flyout-left' : 'flyout-right');
+      } else {
+        flyoutMenuEl.classList.add(state.blockPosition === 'above' ? 'flyout-above' : 'flyout-below');
+      }
+    }
+
+    /* Helper: Create Context Group Elements */
+    function createContextElements() {
+      const elements = [];
+
+      // Action 1: Select All Context Sources
+      elements.push(createIconButton('mobile_friendly', 'Select All Context', false, false, () => {
+        setAllContexts(true);
+        showToast('All Context Sources Activated', 'mobile_friendly');
+      }));
+
+      // Action 2: Clear All Context Sources
+      elements.push(createIconButton('block', 'Clear All Context', false, false, () => {
+        setAllContexts(false);
+        showToast('All Context Sources Cleared', 'block');
+      }));
+
+      // Toggle: Point Selection Raycast Mode
+      elements.push(createIconButton('ads_click', 'Point Selection Mode', state.isPointModeActive, false, () => {
+        state.isPointModeActive = !state.isPointModeActive;
+        pointOverlayEl.classList.toggle('active', state.isPointModeActive);
+        showToast(state.isPointModeActive ? 'Point Mode Active: Tap on screen' : 'Point Mode Deactivated', 'ads_click');
+        renderToolbar();
+      }));
+
+      // Small Divider
+      elements.push(createDivider(state.orientation === 'horizontal' ? 'vertical' : 'horizontal'));
+
+      // Source 1: Screenshot
+      elements.push(createIconButton('screenshot', 'Screenshot Buffer', state.contextSources.screenGrab, false, () => {
+        state.contextSources.screenGrab = !state.contextSources.screenGrab;
+        renderToolbar();
+      }));
+
+      // Source 2: App Semantic Tree
+      elements.push(createIconButton('app_shortcut', 'App UI Tree', state.contextSources.appTree, false, () => {
+        state.contextSources.appTree = !state.contextSources.appTree;
+        renderToolbar();
+      }));
+
+      // Source 3: Highlighted Text
+      elements.push(createIconButton('short_text', 'Highlighted Text', state.contextSources.highlightedText, false, () => {
+        state.contextSources.highlightedText = !state.contextSources.highlightedText;
+        renderToolbar();
+      }));
+
+      // Source 4: Now Playing Media
+      elements.push(createIconButton('play_circle', 'Media Metadata', state.contextSources.media, false, () => {
+        state.contextSources.media = !state.contextSources.media;
+        renderToolbar();
+      }));
+
+      return elements;
+    }
+
+    /* Helper: Generic M3 Icon Button Creator */
+    function createIconButton(iconName, tooltip, isActive, hasBadge, onClick) {
+      const btn = document.createElement('button');
+      btn.className = `tb-btn ${isActive ? 'active' : ''}`;
+      btn.title = tooltip;
+      btn.innerHTML = `<span class="material-symbols-outlined">${iconName}</span>`;
+      
+      if (hasBadge) {
+        const badge = document.createElement('div');
+        badge.className = 'btn-badge';
+        btn.appendChild(badge);
+      }
+
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        onClick();
+      };
+      return btn;
+    }
+
+    /* Helper: Divider */
+    function createDivider(type) {
+      const div = document.createElement('div');
+      div.className = `tb-divider ${type}`;
+      return div;
+    }
+
+    /* Helper: Context source active check */
+    function hasActiveContextSources() {
+      return Object.values(state.contextSources).some(v => v) || state.isPointModeActive;
+    }
+
+    function setAllContexts(active) {
+      state.contextSources.screenGrab = active;
+      state.contextSources.appTree = active;
+      state.contextSources.highlightedText = active;
+      state.contextSources.media = active;
+      renderToolbar();
+    }
+
+    /* Input Selected Action Handler */
+    function selectInput(type) {
+      state.lastUsedInput = type;
+      const inputDef = inputDefinitions.find(i => i.id === type);
+      
+      // Gather active context list
+      const activeCtx = [];
+      if (state.contextSources.screenGrab) activeCtx.push('Screen');
+      if (state.contextSources.appTree) activeCtx.push('Tree');
+      if (state.contextSources.highlightedText) activeCtx.push('Text');
+      if (state.contextSources.media) activeCtx.push('Media');
+      if (state.isPointModeActive) activeCtx.push('Raycast');
+
+      showToast(`Triggered ${inputDef.label} [Context: ${activeCtx.join(', ') || 'None'}]`, inputDef.icon);
+      
+      // Auto-collapse flyout menu if open
+      state.isMenuFlyoutOpen = false;
+      renderToolbar();
+    }
+
+    /* Toggle Toolbar Expansion */
+    function toggleToolbarExpansion(forceState) {
+      state.isExpanded = forceState !== undefined ? forceState : !state.isExpanded;
+      if (!state.isExpanded) {
+        state.isMenuFlyoutOpen = false;
+      }
+      renderToolbar();
+      clampToolbarWithinScreen();
+    }
+
+    /* Toast Notification Display */
+    let toastTimeout = null;
+    function showToast(msg, icon) {
+      clearTimeout(toastTimeout);
+      toastMsgEl.textContent = msg;
+      toastIconEl.textContent = icon || 'info';
+      toastEl.classList.add('show');
+      toastTimeout = setTimeout(() => {
+        toastEl.classList.remove('show');
+      }, 2600);
+    }
+
+    /* -------------------------------------------------------------
+       PHYSICS & DRAG / DOCKING INTERACTION ENGINE
+       ------------------------------------------------------------- */
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+    let initialPos = { x: 0, y: 0 };
+    let hasMoved = false;
+
+    wrapperEl.addEventListener('pointerdown', (e) => {
+      if (state.moveMode === 'locked') return;
+
+      // Don't drag if clicking directly on a button inside expanded toolbar
+      if (e.target.closest('button')) return;
+
+      isDragging = true;
+      hasMoved = false;
+      dragStart = { x: e.clientX, y: e.clientY };
+      initialPos = { x: state.pos.x, y: state.pos.y };
+      
+      wrapperEl.classList.add('is-dragging');
+      wrapperEl.setPointerCapture(e.pointerId);
+      e.stopPropagation();
+    });
+
+    wrapperEl.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+
+      const dx = e.clientX - dragStart.x;
+      const dy = e.clientY - dragStart.y;
+
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasMoved = true;
+        state.isDraggingAction = true;
+      }
+
+      state.pos.x = initialPos.x + dx;
+      state.pos.y = initialPos.y + dy;
+
+      // Bounds clamping within phone device screen
+      clampToolbarWithinScreen();
+
+      // Check Magnetic Edge Guides if Dockable
+      if (state.moveMode === 'dockable') {
+        checkMagneticSnappingPreview();
+      }
+
+      updatePositionDOM();
+    });
+
+    wrapperEl.addEventListener('pointerup', (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      wrapperEl.classList.remove('is-dragging');
+      wrapperEl.releasePointerCapture(e.pointerId);
+
+      // Edge Docking Snap Resolution
+      if (state.moveMode === 'dockable') {
+        resolveEdgeDockSnap();
+      }
+
+      setTimeout(() => {
+        state.isDraggingAction = false;
+      }, 50);
+      
+      clearSnapGuides();
+    });
+
+    function clampToolbarWithinScreen() {
+      const screenRect = deviceScreenEl.getBoundingClientRect();
+      const toolbarRect = wrapperEl.getBoundingClientRect();
+      
+      const maxX = screenRect.width - toolbarRect.width;
+      const maxY = screenRect.height - toolbarRect.height;
+
+      state.pos.x = Math.max(0, Math.min(state.pos.x, maxX));
+      state.pos.y = Math.max(0, Math.min(state.pos.y, maxY));
+    }
+
+    function updatePositionDOM() {
+      wrapperEl.style.left = `${state.pos.x}px`;
+      wrapperEl.style.top = `${state.pos.y}px`;
+    }
+
+    function checkMagneticSnappingPreview() {
+      const screenRect = deviceScreenEl.getBoundingClientRect();
+      const toolbarRect = wrapperEl.getBoundingClientRect();
+      const d = state.snapDistance;
+
+      snapLeftEl.classList.toggle('active', state.pos.x <= d);
+      snapRightEl.classList.toggle('active', (screenRect.width - (state.pos.x + toolbarRect.width)) <= d);
+      snapTopEl.classList.toggle('active', state.pos.y <= d);
+      snapBottomEl.classList.toggle('active', (screenRect.height - (state.pos.y + toolbarRect.height)) <= d);
+    }
+
+    function resolveEdgeDockSnap() {
+      const screenRect = deviceScreenEl.getBoundingClientRect();
+      const toolbarRect = wrapperEl.getBoundingClientRect();
+      const d = state.snapDistance;
+
+      const distLeft = state.pos.x;
+      const distRight = screenRect.width - (state.pos.x + toolbarRect.width);
+      const distTop = state.pos.y;
+      const distBottom = screenRect.height - (state.pos.y + toolbarRect.height);
+
+      let snapped = false;
+
+      // Left snap
+      if (distLeft <= d) {
+        state.pos.x = 0;
+        snapped = true;
+      }
+      // Right snap
+      if (distRight <= d) {
+        state.pos.x = screenRect.width - toolbarRect.width;
+        snapped = true;
+      }
+      // Top snap
+      if (distTop <= d) {
+        state.pos.y = 10;
+        snapped = true;
+      }
+      // Bottom snap
+      if (distBottom <= d) {
+        state.pos.y = screenRect.height - toolbarRect.height - 10;
+        snapped = true;
+      }
+
+      if (snapped && state.autoEdgeTabCollapse && !state.isExpanded) {
+        showToast('Docked to Screen Edge', 'dock');
+      }
+
+      updatePositionDOM();
+    }
+
+    function clearSnapGuides() {
+      snapLeftEl.classList.remove('active');
+      snapRightEl.classList.remove('active');
+      snapTopEl.classList.remove('active');
+      snapBottomEl.classList.remove('active');
+    }
+
+    /* Quick Snap Shortcuts */
+    function quickSnap(posKey) {
+      const screenRect = deviceScreenEl.getBoundingClientRect();
+      const toolbarRect = wrapperEl.getBoundingClientRect();
+      const pad = 12;
+
+      switch(posKey) {
+        case 'top-left': state.pos = { x: pad, y: pad }; break;
+        case 'top': state.pos = { x: (screenRect.width - toolbarRect.width) / 2, y: pad }; break;
+        case 'top-right': state.pos = { x: screenRect.width - toolbarRect.width - pad, y: pad }; break;
+        case 'left': state.pos = { x: pad, y: (screenRect.height - toolbarRect.height) / 2 }; break;
+        case 'center': state.pos = { x: (screenRect.width - toolbarRect.width) / 2, y: (screenRect.height - toolbarRect.height) / 2 }; break;
+        case 'right': state.pos = { x: screenRect.width - toolbarRect.width - pad, y: (screenRect.height - toolbarRect.height) / 2 }; break;
+        case 'bottom-left': state.pos = { x: pad, y: screenRect.height - toolbarRect.height - pad }; break;
+        case 'bottom': state.pos = { x: (screenRect.width - toolbarRect.width) / 2, y: screenRect.height - toolbarRect.height - pad }; break;
+        case 'bottom-right': state.pos = { x: screenRect.width - toolbarRect.width - pad, y: screenRect.height - toolbarRect.height - pad }; break;
+      }
+
+      updatePositionDOM();
+      showToast(`Positioned: ${posKey}`, 'fit_screen');
+    }
+
+    /* -------------------------------------------------------------
+       KOTLIN COMPOSE CONFIGURATION CODE EXPORTER
+       ------------------------------------------------------------- */
+    function updateKotlinCode() {
+      const codeOutput = `// Generated for FloatingToolbar.kt / SettingsRepository
+// Layout: ${state.orientation.toUpperCase()} | Expansion: ${state.expansionMode.toUpperCase()}
+val toolbarConfig = FloatingToolbarConfig(
+    displayState = ${state.isExpanded ? "ToolbarState.EXPANDED" : "ToolbarState.CONDENSED"},
+    condensedDisplay = CondensedMode.${state.condensedContent.toUpperCase()},
+    expandedDisplay = ExpandedMode.${state.expandedContent.toUpperCase()},
+    expansionMode = ExpansionMode.${state.expansionMode.toUpperCase()},
+    blockPosition = BlockPosition.${state.blockPosition.toUpperCase()},
+    expansionAxis = ExpansionAxis.${state.expansionAxis.toUpperCase()},
+    groupExpansion = GroupExpansion.${state.groupExpansion.toUpperCase()},
+    orientation = Orientation.${state.orientation.toUpperCase()},
+    dragHandle = DragHandle.${state.dragHandle.toUpperCase()},
+    movementMode = MovementMode.${state.moveMode.toUpperCase()},
+    snapThresholdDp = ${state.snapDistance}.dp,
+    autoDockCollapse = ${state.autoEdgeTabCollapse},
+    colorRole = "${state.colorRole}",
+    surfaceAlpha = ${state.alpha}f,
+    cornerRadius = ${state.cornerRadius}.dp,
+    buttonSize = ${state.buttonSize}.dp,
+    lastUsedInput = "${state.lastUsedInput}"
+)
+
+// Compose Surface Invocation
+FloatingToolbar(
+    isExpanded = remember { mutableStateOf(${state.isExpanded}) },
+    isPointActive = remember { mutableStateOf(${state.isPointModeActive}) },
+    onExpandToggle = { /* Toggle */ },
+    onInputSelected = { type -> /* Process */ }
+)`;
+
+      document.getElementById('kotlinCodeOutput').textContent = codeOutput;
+    }
+
+    function copyKotlinCode() {
+      const text = document.getElementById('kotlinCodeOutput').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        showToast('Kotlin Configuration Copied to Clipboard!', 'content_paste');
+      });
+    }
+
+    /* -------------------------------------------------------------
+       PRESET COMBINATIONS SETUP
+       ------------------------------------------------------------- */
+    function applyPreset(presetKey) {
+      switch (presetKey) {
+        case 'android_baseline':
+          state.condensedContent = 'pill_bar';
+          state.expandedContent = 'full';
+          state.expansionMode = 'flyout';
+          state.blockPosition = 'below';
+          state.expansionAxis = 'same_axis';
+          state.groupExpansion = 'apart';
+          state.orientation = 'horizontal';
+          state.dragHandle = 'leading';
+          state.moveMode = 'dockable';
+          state.colorRole = 'primary';
+          state.cornerRadius = 28;
+          state.pos = { x: 45, y: 380 };
+          break;
+
+        case 'samsung_edge':
+          state.condensedContent = 'combo';
+          state.expandedContent = 'full';
+          state.expansionMode = 'inline';
+          state.blockPosition = 'below';
+          state.expansionAxis = 'cross_axis';
+          state.groupExpansion = 'together';
+          state.orientation = 'vertical';
+          state.dragHandle = 'none';
+          state.moveMode = 'dockable';
+          state.colorRole = 'teal';
+          state.cornerRadius = 20;
+          state.pos = { x: 330, y: 260 };
+          break;
+
+        case 'dynamic_island':
+          state.condensedContent = 'dynamic_pill';
+          state.expandedContent = 'full';
+          state.expansionMode = 'block_inline';
+          state.blockPosition = 'below';
+          state.expansionAxis = 'cross_axis';
+          state.groupExpansion = 'together';
+          state.orientation = 'horizontal';
+          state.dragHandle = 'none';
+          state.moveMode = 'locked';
+          state.colorRole = 'surface';
+          state.cornerRadius = 24;
+          state.pos = { x: 80, y: 15 };
+          break;
+
+        case 'm3_expressive_card':
+          state.condensedContent = 'last_used';
+          state.expandedContent = 'full';
+          state.expansionMode = 'block_inline';
+          state.blockPosition = 'above';
+          state.expansionAxis = 'same_axis';
+          state.groupExpansion = 'together';
+          state.orientation = 'horizontal';
+          state.dragHandle = 'leading';
+          state.moveMode = 'movable';
+          state.colorRole = 'primary';
+          state.cornerRadius = 28;
+          state.pos = { x: 35, y: 320 };
+          break;
+
+        case 'minimal_fab':
+          state.condensedContent = 'last_used';
+          state.expandedContent = 'inputs_only';
+          state.expansionMode = 'flyout';
+          state.blockPosition = 'above';
+          state.expansionAxis = 'same_axis';
+          state.groupExpansion = 'apart';
+          state.orientation = 'horizontal';
+          state.dragHandle = 'none';
+          state.moveMode = 'dockable';
+          state.colorRole = 'amber';
+          state.cornerRadius = 32;
+          state.pos = { x: 290, y: 560 };
+          break;
+
+        case 'locked_edge_dock':
+          state.condensedContent = 'context_icon';
+          state.expandedContent = 'full';
+          state.expansionMode = 'inline';
+          state.blockPosition = 'below';
+          state.expansionAxis = 'same_axis';
+          state.groupExpansion = 'together';
+          state.orientation = 'vertical';
+          state.dragHandle = 'none';
+          state.moveMode = 'locked';
+          state.colorRole = 'surface';
+          state.cornerRadius = 16;
+          state.pos = { x: 0, y: 220 };
+          break;
+      }
+
+      syncUIFromState();
+      renderToolbar();
+      updatePositionDOM();
+      showToast(`Preset Loaded: ${presetKey.replace('_', ' ').toUpperCase()}`, 'auto_awesome');
+    }
+
+    /* Synchronize Sidebar UI Controls with State Object */
+    function syncUIFromState() {
+      // Segmented buttons sync
+      syncSegmentedGroup('controlToolbarState', state.isExpanded ? 'expanded' : 'condensed');
+      syncSegmentedGroup('controlCondensedContent', state.condensedContent);
+      syncSegmentedGroup('controlExpandedContent', state.expandedContent);
+      syncSegmentedGroup('controlExpansionMode', state.expansionMode);
+      syncSegmentedGroup('controlBlockPosition', state.blockPosition);
+      syncSegmentedGroup('controlExpansionAxis', state.expansionAxis);
+      syncSegmentedGroup('controlGroupExpansion', state.groupExpansion);
+      syncSegmentedGroup('controlOrientation', state.orientation);
+      syncSegmentedGroup('controlDragHandle', state.dragHandle);
+      syncSegmentedGroup('controlMoveMode', state.moveMode);
+      syncSegmentedGroup('controlColorRole', state.colorRole);
+      syncSegmentedGroup('controlThemeMode', state.themeMode);
+
+      // Sliders sync
+      document.getElementById('sliderSnapDist').value = state.snapDistance;
+      document.getElementById('valSnapDist').textContent = `${state.snapDistance}px`;
+      
+      document.getElementById('sliderAlpha').value = Math.round(state.alpha * 100);
+      document.getElementById('valAlpha').textContent = `${Math.round(state.alpha * 100)}%`;
+
+      document.getElementById('sliderCorner').value = state.cornerRadius;
+      document.getElementById('valCorner').textContent = `${state.cornerRadius}px`;
+
+      document.getElementById('sliderBtnSize').value = state.buttonSize;
+      document.getElementById('valBtnSize').textContent = `${state.buttonSize}px`;
+
+      applyThemeStyleTokens();
+    }
+
+    function syncSegmentedGroup(containerId, activeVal) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      Array.from(container.querySelectorAll('.segmented-btn')).forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.value === activeVal);
+      });
+    }
+
+    /* Apply CSS Variables according to Color Role & Sliders */
+    function applyThemeStyleTokens() {
+      const root = document.documentElement;
+      document.body.setAttribute('data-theme', state.themeMode);
+
+      // Theme role palettes
+      let primary = '#6750A4';
+      let primaryContainer = '#EADDFF';
+      let onPrimaryContainer = '#21005D';
+
+      switch (state.colorRole) {
+        case 'tertiary':
+          primary = '#7D5260';
+          primaryContainer = '#FFD8E4';
+          onPrimaryContainer = '#31111D';
+          break;
+        case 'teal':
+          primary = '#006A6A';
+          primaryContainer = '#6FF7F7';
+          onPrimaryContainer = '#002020';
+          break;
+        case 'amber':
+          primary = '#825500';
+          primaryContainer = '#FFDDB3';
+          onPrimaryContainer = '#2A1800';
+          break;
+        case 'surface':
+          primary = '#49454F';
+          primaryContainer = '#E7E0EC';
+          onPrimaryContainer = '#1D1B20';
+          break;
+      }
+
+      root.style.setProperty('--tb-active-container', primaryContainer);
+      root.style.setProperty('--tb-active-content', onPrimaryContainer);
+      root.style.setProperty('--tb-corner-radius', `${state.cornerRadius}px`);
+      root.style.setProperty('--tb-button-size', `${state.buttonSize}px`);
+      root.style.setProperty('--tb-icon-size', `${state.buttonSize * 0.55}px`);
+      
+      const isDark = state.themeMode === 'dark';
+      const rgb = isDark ? '33, 31, 38' : '243, 237, 247';
+      root.style.setProperty('--tb-container-color', `rgba(${rgb}, ${state.alpha})`);
+    }
+
+    /* -------------------------------------------------------------
+       SETUP EVENT LISTENERS: SIDEBAR TABS & CONTROLS
+       ------------------------------------------------------------- */
+    function initEvents() {
+      // Sidebar Tab Switching
+      document.querySelectorAll('.sidebar-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.sidebar-tab-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+          
+          btn.classList.add('active');
+          const target = document.getElementById(btn.dataset.tab);
+          if (target) target.style.display = 'flex';
+        });
+      });
+
+      // Top Action Buttons
+      btnToggleState.addEventListener('click', () => toggleToolbarExpansion());
+      document.getElementById('btnResetPosition').addEventListener('click', () => quickSnap('center'));
+      document.getElementById('btnExportKotlin').addEventListener('click', () => copyKotlinCode());
+
+      // Device Orientation Flip
+      document.getElementById('btnToggleOrientation').addEventListener('click', () => {
+        deviceFrameEl.classList.toggle('landscape');
+        clampToolbarWithinScreen();
+        updatePositionDOM();
+      });
+
+      // Scene Switcher
+      document.querySelectorAll('.viewport-toolbar button[data-scene]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.viewport-toolbar button[data-scene]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const scene = btn.dataset.scene;
+
+          // Hide all mock screens
+          document.getElementById('sceneContainerHome').style.display = scene === 'home' ? 'block' : 'none';
+          document.getElementById('sceneContainerArticle').style.display = scene === 'article' ? 'block' : 'none';
+          document.getElementById('sceneContainerChat').style.display = scene === 'chat' ? 'flex' : 'none';
+          document.getElementById('sceneContainerGrid').style.display = scene === 'grid' ? 'block' : 'none';
+
+          deviceScreenEl.className = `device-screen screen-bg-${scene}`;
+        });
+      });
+
+      // Segmented Controls Helper Wireup
+      function wireSegmented(id, onChange) {
+        const group = document.getElementById(id);
+        if (!group) return;
+        group.addEventListener('click', (e) => {
+          const btn = e.target.closest('.segmented-btn');
+          if (!btn) return;
+          Array.from(group.children).forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          onChange(btn.dataset.value);
+        });
+      }
+
+      wireSegmented('controlToolbarState', (val) => toggleToolbarExpansion(val === 'expanded'));
+      wireSegmented('controlCondensedContent', (val) => { state.condensedContent = val; renderToolbar(); });
+      wireSegmented('controlExpandedContent', (val) => { state.expandedContent = val; renderToolbar(); });
+      wireSegmented('controlExpansionMode', (val) => { state.expansionMode = val; renderToolbar(); });
+      wireSegmented('controlBlockPosition', (val) => { state.blockPosition = val; renderToolbar(); });
+      wireSegmented('controlExpansionAxis', (val) => { state.expansionAxis = val; renderToolbar(); });
+      wireSegmented('controlGroupExpansion', (val) => { state.groupExpansion = val; renderToolbar(); });
+      wireSegmented('controlOrientation', (val) => { state.orientation = val; renderToolbar(); });
+      wireSegmented('controlDragHandle', (val) => { state.dragHandle = val; renderToolbar(); });
+      wireSegmented('controlMoveMode', (val) => { 
+        state.moveMode = val; 
+        wrapperEl.style.cursor = val === 'locked' ? 'default' : 'grab';
+        showToast(`Movement Mode: ${val.toUpperCase()}`, 'pan_tool');
+      });
+      wireSegmented('controlColorRole', (val) => { state.colorRole = val; applyThemeStyleTokens(); });
+      wireSegmented('controlThemeMode', (val) => { state.themeMode = val; applyThemeStyleTokens(); });
+
+      // Sliders Wireup
+      document.getElementById('sliderSnapDist').addEventListener('input', (e) => {
+        state.snapDistance = parseInt(e.target.value);
+        document.getElementById('valSnapDist').textContent = `${state.snapDistance}px`;
+      });
+      document.getElementById('sliderAlpha').addEventListener('input', (e) => {
+        state.alpha = parseInt(e.target.value) / 100;
+        document.getElementById('valAlpha').textContent = `${e.target.value}%`;
+        applyThemeStyleTokens();
+      });
+      document.getElementById('sliderCorner').addEventListener('input', (e) => {
+        state.cornerRadius = parseInt(e.target.value);
+        document.getElementById('valCorner').textContent = `${state.cornerRadius}px`;
+        applyThemeStyleTokens();
+      });
+      document.getElementById('sliderBtnSize').addEventListener('input', (e) => {
+        state.buttonSize = parseInt(e.target.value);
+        document.getElementById('valBtnSize').textContent = `${state.buttonSize}px`;
+        applyThemeStyleTokens();
+      });
+      document.getElementById('sliderAnimSpeed').addEventListener('input', (e) => {
+        state.animSpeed = parseInt(e.target.value);
+        document.getElementById('valAnimSpeed').textContent = `${state.animSpeed}ms`;
+        surfaceEl.style.transitionDuration = `${state.animSpeed}ms`;
+      });
+      document.getElementById('checkEdgeTabCollapse').addEventListener('change', (e) => {
+        state.autoEdgeTabCollapse = e.target.checked;
+      });
+
+      // Update real-time mock clock
+      setInterval(() => {
+        const d = new Date();
+        const hrs = String(d.getHours()).padStart(2, '0');
+        const mins = String(d.getMinutes()).padStart(2, '0');
+        const clock = document.getElementById('mockClock');
+        if (clock) clock.textContent = `${hrs}:${mins}`;
+      }, 1000);
+    }
+
+    /* Initial Startup Execution */
+    window.addEventListener('DOMContentLoaded', () => {
+      initEvents();
+      syncUIFromState();
+      renderToolbar();
+      updatePositionDOM();
+    });
+  </script>
+</body>
+</html>

@@ -1,10 +1,15 @@
 package com.capture.engine.ui
 
+import android.app.StatusBarManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon as AndroidIcon
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import com.capture.engine.R
+import com.capture.engine.services.CaptureTileService
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Key
@@ -40,6 +46,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,7 +89,7 @@ fun SettingsScreen(
 
     // Permission states
     val isAccessibilityActive = CaptureAccessibilityService.isRunning
-    val isMediaProjectionActive = ScreenCaptureService.isReady
+    val isMediaProjectionActive by ScreenCaptureService.isRunningFlow.collectAsState()
     val isNotificationListenerActive = MediaMetadataListener.isConnected
     val isOverlayPermissionActive = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
         Settings.canDrawOverlays(context)
@@ -311,8 +318,34 @@ fun SettingsScreen(
                             } else {
                                 OverlayManager.getInstance(context).hideAll()
                             }
+                            CaptureTileService.requestTileUpdate(context)
                         }
                     )
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val statusBarManager = context.getSystemService(StatusBarManager::class.java)
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                statusBarManager?.requestAddTileService(
+                                    ComponentName(context, CaptureTileService::class.java),
+                                    context.getString(R.string.qs_tile_label),
+                                    AndroidIcon.createWithResource(context, R.drawable.ic_qs_hud),
+                                    context.mainExecutor
+                                ) { /* result handled by OS */ }
+                            } catch (e: Exception) {
+                                // Fallback
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                    ) {
+                        Icon(Icons.Default.AddCircleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Add to Quick Settings Shade")
+                    }
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

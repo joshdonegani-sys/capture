@@ -17,7 +17,9 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Binder
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Base64
 import android.util.DisplayMetrics
 import android.util.Log
@@ -28,6 +30,8 @@ import com.capture.engine.R
 import com.capture.engine.ui.MainActivity
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayOutputStream
@@ -56,17 +60,6 @@ class ScreenCaptureService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = createNotification()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
-
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val resultData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent?.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
@@ -75,14 +68,60 @@ class ScreenCaptureService : Service() {
             intent?.getParcelableExtra(EXTRA_RESULT_DATA)
         }
 
-        if (resultCode != 0 && resultData != null && mediaProjection == null) {
-            val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            mediaProjection = projectionManager.getMediaProjection(resultCode, resultData)
-            setupVirtualDisplay()
-            Log.d(TAG, "MediaProjection initialized successfully")
+        // If service is started without a valid token and no active projection exists, stop immediately
+        if ((resultCode == 0 || resultData == null) && mediaProjection == null) {
+            Log.w(TAG, "ScreenCaptureService started without valid MediaProjection token, stopping self")
+            stopSelf()
+            return START_NOT_STICKY
         }
 
-        return START_STICKY
+        val notification = createNotification()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to startForeground for ScreenCaptureService", e)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (resultCode != 0 && resultData != null && mediaProjection == null) {
+            try {
+                val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                val projection = projectionManager.getMediaProjection(resultCode, resultData)
+                if (projection != null) {
+                    // Android 14+ (API 34/35) REQUIRES registerCallback before createVirtualDisplay
+                    projection.registerCallback(object : MediaProjection.Callback() {
+                        override fun onStop() {
+                            super.onStop()
+                            Log.d(TAG, "MediaProjection stopped by system")
+                            cleanup()
+                            stopSelf()
+                        }
+                    }, Handler(Looper.getMainLooper()))
+
+                    mediaProjection = projection
+                    _isRunningFlow.value = true
+                    setupVirtualDisplay()
+                    Log.d(TAG, "MediaProjection initialized successfully")
+                } else {
+                    Log.e(TAG, "Failed to obtain MediaProjection from projectionManager")
+                    stopSelf()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing MediaProjection", e)
+                stopSelf()
+            }
+        }
+
+        return START_NOT_STICKY
     }
 
     private fun updateScreenMetrics() {
@@ -104,27 +143,31 @@ class ScreenCaptureService : Service() {
 
     @SuppressLint("WrongConstant")
     private fun setupVirtualDisplay() {
-        updateScreenMetrics()
-        imageReader?.close()
-        virtualDisplay?.release()
+        try {
+            updateScreenMetrics()
+            imageReader?.close()
+            virtualDisplay?.release()
 
-        imageReader = ImageReader.newInstance(
-            screenWidth,
-            screenHeight,
-            PixelFormat.RGBA_8888,
-            2
-        )
+            imageReader = ImageReader.newInstance(
+                screenWidth,
+                screenHeight,
+                PixelFormat.RGBA_8888,
+                2
+            )
 
-        virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "CaptureEngine-VD",
-            screenWidth,
-            screenHeight,
-            screenDensity,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface,
-            null,
-            null
-        )
+            virtualDisplay = mediaProjection?.createVirtualDisplay(
+                "CaptureEngine-VD",
+                screenWidth,
+                screenHeight,
+                screenDensity,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader?.surface,
+                null,
+                null
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up VirtualDisplay", e)
+        }
     }
 
     suspend fun captureScreenBase64(cropRect: Rect? = null): String? = withContext(Dispatchers.IO) {
@@ -222,11 +265,31 @@ class ScreenCaptureService : Service() {
             .build()
     }
 
+    private fun cleanup() {
+        try {
+            virtualDisplay?.release()
+            virtualDisplay = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing virtualDisplay", e)
+        }
+        try {
+            imageReader?.close()
+            imageReader = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error closing imageReader", e)
+        }
+        try {
+            mediaProjection?.stop()
+            mediaProjection = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping mediaProjection", e)
+        }
+        _isRunningFlow.value = false
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        virtualDisplay?.release()
-        imageReader?.close()
-        mediaProjection?.stop()
+        cleanup()
         if (instance == this) {
             instance = null
         }
@@ -237,6 +300,9 @@ class ScreenCaptureService : Service() {
         const val NOTIFICATION_ID = 2001
         const val EXTRA_RESULT_CODE = "extra_result_code"
         const val EXTRA_RESULT_DATA = "extra_result_data"
+
+        private val _isRunningFlow = MutableStateFlow(false)
+        val isRunningFlow: StateFlow<Boolean> = _isRunningFlow
 
         var instance: ScreenCaptureService? = null
             private set

@@ -146,15 +146,179 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    // 4. Display Drag Handle Toggle
-    private val _showDragHandle = MutableStateFlow(prefs.getBoolean(KEY_SHOW_DRAG_HANDLE, true))
-    val showDragHandleFlow: StateFlow<Boolean> = _showDragHandle
+    // --- Toolbar Layout Engine Core Settings ---
 
-    var showDragHandle: Boolean
-        get() = _showDragHandle.value
+    // Base Layout: "horiz" or "vert"
+    private val _toolbarBaseLayout = MutableStateFlow(prefs.getString(KEY_TOOLBAR_BASE_LAYOUT, "horiz") ?: "horiz")
+    val toolbarBaseLayoutFlow: StateFlow<String> = _toolbarBaseLayout
+
+    var toolbarBaseLayout: String
+        get() = _toolbarBaseLayout.value
         set(value) {
-            _showDragHandle.value = value
-            prefs.edit().putBoolean(KEY_SHOW_DRAG_HANDLE, value).apply()
+            _toolbarBaseLayout.value = value
+            prefs.edit().putString(KEY_TOOLBAR_BASE_LAYOUT, value).apply()
+        }
+
+    // Sub Layout: "flow axis" or "cross axis"
+    private val _toolbarSubLayout = MutableStateFlow(prefs.getString(KEY_TOOLBAR_SUB_LAYOUT, "flow axis") ?: "flow axis")
+    val toolbarSubLayoutFlow: StateFlow<String> = _toolbarSubLayout
+
+    var toolbarSubLayout: String
+        get() = _toolbarSubLayout.value
+        set(value) {
+            _toolbarSubLayout.value = value
+            prefs.edit().putString(KEY_TOOLBAR_SUB_LAYOUT, value).apply()
+        }
+
+    // Sub Direction: "down", "up", "left", "right"
+    private val _toolbarSubDirection = MutableStateFlow(prefs.getString(KEY_TOOLBAR_SUB_DIRECTION, "down") ?: "down")
+    val toolbarSubDirectionFlow: StateFlow<String> = _toolbarSubDirection
+
+    var toolbarSubDirection: String
+        get() = _toolbarSubDirection.value
+        set(value) {
+            _toolbarSubDirection.value = value
+            prefs.edit().putString(KEY_TOOLBAR_SUB_DIRECTION, value).apply()
+        }
+
+    // Sub Connection: "separate" or "joined"
+    private val _toolbarSubConnection = MutableStateFlow(prefs.getString(KEY_TOOLBAR_SUB_CONNECTION, "separate") ?: "separate")
+    val toolbarSubConnectionFlow: StateFlow<String> = _toolbarSubConnection
+
+    var toolbarSubConnection: String
+        get() = _toolbarSubConnection.value
+        set(value) {
+            _toolbarSubConnection.value = value
+            prefs.edit().putString(KEY_TOOLBAR_SUB_CONNECTION, value).apply()
+        }
+
+    // Sub Align: "full base" or "base icon"
+    private val _toolbarSubAlign = MutableStateFlow(prefs.getString(KEY_TOOLBAR_SUB_ALIGN, "full base") ?: "full base")
+    val toolbarSubAlignFlow: StateFlow<String> = _toolbarSubAlign
+
+    var toolbarSubAlign: String
+        get() = _toolbarSubAlign.value
+        set(value) {
+            _toolbarSubAlign.value = value
+            prefs.edit().putString(KEY_TOOLBAR_SUB_ALIGN, value).apply()
+        }
+
+    // Sub Align Modifier (for full base): "top", "middle", "bottom"
+    private val _toolbarSubAlignModifier = MutableStateFlow(prefs.getString(KEY_TOOLBAR_SUB_ALIGN_MODIFIER, "middle") ?: "middle")
+    val toolbarSubAlignModifierFlow: StateFlow<String> = _toolbarSubAlignModifier
+
+    var toolbarSubAlignModifier: String
+        get() = _toolbarSubAlignModifier.value
+        set(value) {
+            _toolbarSubAlignModifier.value = value
+            prefs.edit().putString(KEY_TOOLBAR_SUB_ALIGN_MODIFIER, value).apply()
+        }
+
+    // Dormant State Config
+    // Dormant Style: "small icon", "horizontal bar", "vertical bar"
+    private val _toolbarDormantStyle = MutableStateFlow(prefs.getString(KEY_TOOLBAR_DORMANT_STYLE, "horizontal bar") ?: "horizontal bar")
+    val toolbarDormantStyleFlow: StateFlow<String> = _toolbarDormantStyle
+
+    var toolbarDormantStyle: String
+        get() = _toolbarDormantStyle.value
+        set(value) {
+            _toolbarDormantStyle.value = value
+            prefs.edit().putString(KEY_TOOLBAR_DORMANT_STYLE, value).apply()
+        }
+
+    private val _toolbarDormantLocked = MutableStateFlow(prefs.getBoolean(KEY_TOOLBAR_DORMANT_LOCKED, false))
+    val toolbarDormantLockedFlow: StateFlow<Boolean> = _toolbarDormantLocked
+
+    var toolbarDormantLocked: Boolean
+        get() = _toolbarDormantLocked.value
+        set(value) {
+            _toolbarDormantLocked.value = value
+            prefs.edit().putBoolean(KEY_TOOLBAR_DORMANT_LOCKED, value).apply()
+        }
+
+    // Dormant Position Mode: "off", "defined"
+    private val _toolbarDormantPositionMode = MutableStateFlow(prefs.getString(KEY_TOOLBAR_DORMANT_POS_MODE, "off") ?: "off")
+    val toolbarDormantPositionModeFlow: StateFlow<String> = _toolbarDormantPositionMode
+
+    var toolbarDormantPositionMode: String
+        get() = _toolbarDormantPositionMode.value
+        set(value) {
+            _toolbarDormantPositionMode.value = value
+            prefs.edit().putString(KEY_TOOLBAR_DORMANT_POS_MODE, value).apply()
+        }
+
+    var toolbarDormantPosX: Int
+        get() = prefs.getInt(KEY_TOOLBAR_DORMANT_POS_X, 16)
+        set(value) = prefs.edit().putInt(KEY_TOOLBAR_DORMANT_POS_X, value).apply()
+
+    var toolbarDormantPosY: Int
+        get() = prefs.getInt(KEY_TOOLBAR_DORMANT_POS_Y, 500)
+        set(value) = prefs.edit().putInt(KEY_TOOLBAR_DORMANT_POS_Y, value).apply()
+
+    // Awake State Config
+    // Awake Style: "double icon", "single icon", "all icons"
+    private val _toolbarAwakeStyle = MutableStateFlow(prefs.getString(KEY_TOOLBAR_AWAKE_STYLE, "double icon") ?: "double icon")
+    val toolbarAwakeStyleFlow: StateFlow<String> = _toolbarAwakeStyle
+
+    var toolbarAwakeStyle: String
+        get() = _toolbarAwakeStyle.value
+        set(value) {
+            _toolbarAwakeStyle.value = value
+            prefs.edit().putString(KEY_TOOLBAR_AWAKE_STYLE, value).apply()
+        }
+
+    private val _toolbarAwakeLocked = MutableStateFlow(prefs.getBoolean(KEY_TOOLBAR_AWAKE_LOCKED, false))
+    val toolbarAwakeLockedFlow: StateFlow<Boolean> = _toolbarAwakeLocked
+
+    var toolbarAwakeLocked: Boolean
+        get() = _toolbarAwakeLocked.value
+        set(value) {
+            _toolbarAwakeLocked.value = value
+            prefs.edit().putBoolean(KEY_TOOLBAR_AWAKE_LOCKED, value).apply()
+        }
+
+    // Awake Position: "free", "dockable", "always docked"
+    private val _toolbarAwakePosition = MutableStateFlow(prefs.getString(KEY_TOOLBAR_AWAKE_POSITION, "dockable") ?: "dockable")
+    val toolbarAwakePositionFlow: StateFlow<String> = _toolbarAwakePosition
+
+    var toolbarAwakePosition: String
+        get() = _toolbarAwakePosition.value
+        set(value) {
+            _toolbarAwakePosition.value = value
+            prefs.edit().putString(KEY_TOOLBAR_AWAKE_POSITION, value).apply()
+        }
+
+    // All Icons Order: "inner", "outer", "left", "right", "up", "down"
+    private val _toolbarAllIconsOrder = MutableStateFlow(prefs.getString(KEY_TOOLBAR_ALL_ICONS_ORDER, "inner") ?: "inner")
+    val toolbarAllIconsOrderFlow: StateFlow<String> = _toolbarAllIconsOrder
+
+    var toolbarAllIconsOrder: String
+        get() = _toolbarAllIconsOrder.value
+        set(value) {
+            _toolbarAllIconsOrder.value = value
+            prefs.edit().putString(KEY_TOOLBAR_ALL_ICONS_ORDER, value).apply()
+        }
+
+    // Wake Actions: "single tap", "double tap", "long tap", "slide horizontal", "slide vertical"
+    private val _toolbarWakeGesture = MutableStateFlow(prefs.getString(KEY_TOOLBAR_WAKE_GESTURE, "single tap") ?: "single tap")
+    val toolbarWakeGestureFlow: StateFlow<String> = _toolbarWakeGesture
+
+    var toolbarWakeGesture: String
+        get() = _toolbarWakeGesture.value
+        set(value) {
+            _toolbarWakeGesture.value = value
+            prefs.edit().putString(KEY_TOOLBAR_WAKE_GESTURE, value).apply()
+        }
+
+    // Sleep Actions: "double tap", "flick", "drag to edge", "drag to dormant zone"
+    private val _toolbarSleepGesture = MutableStateFlow(prefs.getString(KEY_TOOLBAR_SLEEP_GESTURE, "double tap") ?: "double tap")
+    val toolbarSleepGestureFlow: StateFlow<String> = _toolbarSleepGesture
+
+    var toolbarSleepGesture: String
+        get() = _toolbarSleepGesture.value
+        set(value) {
+            _toolbarSleepGesture.value = value
+            prefs.edit().putString(KEY_TOOLBAR_SLEEP_GESTURE, value).apply()
         }
 
     companion object {
@@ -177,6 +341,27 @@ class SettingsRepository(context: Context) {
         private const val KEY_TOOLBAR_CUSTOM_SEED = "toolbar_custom_seed"
         private const val KEY_CONTEXT_SOURCES_DISPLAY = "context_sources_display"
         private const val KEY_VISIBLE_INPUT_ICONS = "visible_input_icons"
-        private const val KEY_SHOW_DRAG_HANDLE = "show_drag_handle"
+
+        // Toolbar UI Layout Keys
+        private const val KEY_TOOLBAR_BASE_LAYOUT = "toolbar_base_layout"
+        private const val KEY_TOOLBAR_SUB_LAYOUT = "toolbar_sub_layout"
+        private const val KEY_TOOLBAR_SUB_DIRECTION = "toolbar_sub_direction"
+        private const val KEY_TOOLBAR_SUB_CONNECTION = "toolbar_sub_connection"
+        private const val KEY_TOOLBAR_SUB_ALIGN = "toolbar_sub_align"
+        private const val KEY_TOOLBAR_SUB_ALIGN_MODIFIER = "toolbar_sub_align_modifier"
+
+        private const val KEY_TOOLBAR_DORMANT_STYLE = "toolbar_dormant_style"
+        private const val KEY_TOOLBAR_DORMANT_LOCKED = "toolbar_dormant_locked"
+        private const val KEY_TOOLBAR_DORMANT_POS_MODE = "toolbar_dormant_pos_mode"
+        private const val KEY_TOOLBAR_DORMANT_POS_X = "toolbar_dormant_pos_x"
+        private const val KEY_TOOLBAR_DORMANT_POS_Y = "toolbar_dormant_pos_y"
+
+        private const val KEY_TOOLBAR_AWAKE_STYLE = "toolbar_awake_style"
+        private const val KEY_TOOLBAR_AWAKE_LOCKED = "toolbar_awake_locked"
+        private const val KEY_TOOLBAR_AWAKE_POSITION = "toolbar_awake_position"
+        private const val KEY_TOOLBAR_ALL_ICONS_ORDER = "toolbar_all_icons_order"
+
+        private const val KEY_TOOLBAR_WAKE_GESTURE = "toolbar_wake_gesture"
+        private const val KEY_TOOLBAR_SLEEP_GESTURE = "toolbar_sleep_gesture"
     }
 }

@@ -11,6 +11,7 @@
 
     <!-- Audio / Voice -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!-- Foreground Services -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -19,6 +20,13 @@
 
     <!-- Boot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Package Visibility for System Speech Recognition Service -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <application
         android:name=".CaptureApplication"
@@ -98,6 +106,12 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
 
+        <!-- Audio Record Foreground Service for Background Mic Access -->
+        <service
+            android:name=".services.AudioRecordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
         <!-- Notification Listener Service for Media Sessions -->
         <service
             android:name=".services.MediaMetadataListener"
@@ -112,7 +126,7 @@
         <!-- Quick Settings Tile -->
         <service
             android:name=".services.CaptureTileService"
-            android:icon="@android:drawable/ic_menu_camera"
+            android:icon="@drawable/ic_qs_hud"
             android:label="@string/qs_tile_label"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">

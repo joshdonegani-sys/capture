@@ -1,9 +1,11 @@
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.capture.engine.overlay
 
+import android.Manifest
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
@@ -12,11 +14,35 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Base64
 import android.util.Log
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.filled.MicOff
+import androidx.core.content.ContextCompat
+import com.capture.engine.services.AudioRecordService
+import com.capture.engine.ui.MainActivity
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -64,6 +90,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,11 +98,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileInputStream
 import java.util.Locale
@@ -127,11 +159,37 @@ fun InputBottomSheet(
     var audioFile by remember { mutableStateOf<File?>(null) }
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
 
+    // Microphone permission check state
+    var hasMicPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    // Refresh permission status on launch
+    LaunchedEffect(Unit) {
+        hasMicPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     // Speech Recognizer setup
     val speechRecognizer = remember {
-        if (SpeechRecognizer.isRecognitionAvailable(context)) {
-            SpeechRecognizer.createSpeechRecognizer(context)
-        } else null
+        try {
+            if (SpeechRecognizer.isRecognitionAvailable(context)) {
+                SpeechRecognizer.createSpeechRecognizer(context.applicationContext)
+            } else {
+                Log.w("InputBottomSheet", "Speech recognition not available")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("InputBottomSheet", "Failed to init SpeechRecognizer", e)
+            null
+        }
     }
 
     // Timer for audio recording
@@ -146,59 +204,108 @@ fun InputBottomSheet(
 
     DisposableEffect(Unit) {
         onDispose {
-            speechRecognizer?.destroy()
+            try {
+                speechRecognizer?.destroy()
+            } catch (e: Exception) {
+                // Ignore cleanup error
+            }
             try {
                 mediaRecorder?.stop()
                 mediaRecorder?.release()
             } catch (e: Exception) {
                 // Ignore cleanup error
             }
+            AudioRecordService.stop(context)
         }
     }
 
     fun startListening() {
-        if (speechRecognizer == null) return
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        val recognizer = speechRecognizer
+        if (recognizer == null) {
+            Log.e("InputBottomSheet", "SpeechRecognizer is null")
+            return
         }
-        speechRecognizer.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) { isVoiceListening = true }
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() { isVoiceListening = false }
-            override fun onError(error: Int) { isVoiceListening = false }
-            override fun onResults(results: Bundle?) {
-                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                if (!matches.isNullOrEmpty()) {
-                    val result = matches[0]
-                    voiceText = if (voiceText.isBlank()) result else "$voiceText $result"
-                }
-                isVoiceListening = false
+        hasMicPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasMicPermission) {
+            Log.w("InputBottomSheet", "RECORD_AUDIO not granted")
+            return
+        }
+
+        try {
+            AudioRecordService.start(context)
+            recognizer.cancel()
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             }
-            override fun onPartialResults(partialResults: Bundle?) {
-                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                if (!matches.isNullOrEmpty()) {
-                    val partial = matches[0]
-                    if (voiceText.isBlank()) {
+            recognizer.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) { isVoiceListening = true }
+                override fun onBeginningOfSpeech() { isVoiceListening = true }
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() {
+                    isVoiceListening = false
+                    AudioRecordService.stop(context)
+                }
+                override fun onError(error: Int) {
+                    Log.e("InputBottomSheet", "SpeechRecognizer error: $error")
+                    isVoiceListening = false
+                    AudioRecordService.stop(context)
+                }
+                override fun onResults(results: Bundle?) {
+                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    if (!matches.isNullOrEmpty()) {
+                        val result = matches[0]
+                        voiceText = if (voiceText.isBlank()) result else "$voiceText $result"
+                    }
+                    isVoiceListening = false
+                    AudioRecordService.stop(context)
+                }
+                override fun onPartialResults(partialResults: Bundle?) {
+                    val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    if (!matches.isNullOrEmpty()) {
+                        val partial = matches[0]
                         voiceText = partial
                     }
                 }
-            }
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-        })
-        speechRecognizer.startListening(intent)
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            })
+            recognizer.startListening(intent)
+            isVoiceListening = true
+        } catch (e: Exception) {
+            Log.e("InputBottomSheet", "Failed to start listening", e)
+            isVoiceListening = false
+            AudioRecordService.stop(context)
+        }
     }
 
     fun stopListening() {
-        speechRecognizer?.stopListening()
+        try {
+            speechRecognizer?.stopListening()
+        } catch (e: Exception) {
+            Log.e("InputBottomSheet", "Failed to stop listening", e)
+        }
         isVoiceListening = false
+        AudioRecordService.stop(context)
     }
 
     fun startAudioRecording() {
+        hasMicPermission = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasMicPermission) {
+            Log.w("InputBottomSheet", "startAudioRecording: RECORD_AUDIO not granted")
+            return
+        }
+
         try {
+            AudioRecordService.start(context)
             val file = File(context.cacheDir, "capture_audio_${System.currentTimeMillis()}.m4a")
             audioFile = file
 
@@ -223,6 +330,7 @@ fun InputBottomSheet(
             recordingDurationSeconds = 0
         } catch (e: Exception) {
             Log.e("InputBottomSheet", "Failed to start audio recording", e)
+            AudioRecordService.stop(context)
         }
     }
 
@@ -235,33 +343,219 @@ fun InputBottomSheet(
             isAudioPaused = false
         } catch (e: Exception) {
             Log.e("InputBottomSheet", "Failed to stop audio recording", e)
+        } finally {
+            AudioRecordService.stop(context)
         }
     }
 
     // Auto-start recording if initial tab matches
-    LaunchedEffect(initialTab) {
-        if (initialTab == "speech_to_text") {
-            startListening()
-        } else if (initialTab == "mic_audio") {
-            startAudioRecording()
+    LaunchedEffect(initialTab, hasMicPermission) {
+        if (hasMicPermission) {
+            if (initialTab == "speech_to_text") {
+                startListening()
+            } else if (initialTab == "mic_audio") {
+                startAudioRecording()
+            }
         }
     }
 
-    // Scrim / background dismissable area: clicking outside discards and dismisses
+    // Configuration & Screen Measurements
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val screenHeightDp = configuration.screenHeightDp.dp
+    val screenHeightPx = with(density) { screenHeightDp.toPx() }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Dimensions for Short and Tall heights
+    val shortContentHeightPx = with(density) { 130.dp.toPx() }
+    val tallContentHeightPx = with(density) { ((screenHeightDp * 0.52f).coerceAtLeast(360.dp)).toPx() }
+
+    // Dynamic content height animatable: tracks touch drags between short and tall
+    val contentHeightPxAnim = remember { Animatable(shortContentHeightPx) }
+    // Sheet translation Y animatable: used exclusively for entrance and exit (dismiss) off-screen
+    val sheetTranslationY = remember { Animatable(screenHeightPx) }
+    var isDismissing by remember { mutableStateOf(false) }
+
+    // Current content height exposed to children composables
+    val animatedContentHeightDp = with(density) { contentHeightPxAnim.value.toDp() }
+
+    // Start slide-up entrance animation immediately on launch: smooth FastOutSlowInEasing
+    LaunchedEffect(Unit) {
+        sheetTranslationY.animateTo(
+            targetValue = 0f,
+            animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
+        )
+    }
+
+    // Dismiss with smooth slide-down animation
+    fun dismissSheet(onComplete: () -> Unit = onDismiss) {
+        if (isDismissing) return
+        isDismissing = true
+        coroutineScope.launch {
+            sheetTranslationY.animateTo(
+                targetValue = screenHeightPx,
+                animationSpec = tween(durationMillis = 220, easing = FastOutLinearInEasing)
+            )
+            onComplete()
+        }
+    }
+
+    // Intercept back key: if in fullscreen, collapse to short version; otherwise dismiss
+    BackHandler {
+        if (isFullscreen) {
+            isFullscreen = false
+            coroutineScope.launch {
+                contentHeightPxAnim.animateTo(
+                    targetValue = shortContentHeightPx,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                )
+            }
+        } else {
+            dismissSheet()
+        }
+    }
+
+    // Gesture detection on the drag handle / header:
+    val thresholdPx = with(density) { 45.dp.toPx() }
+    val dragGestureModifier = Modifier.pointerInput(Unit) {
+        detectVerticalDragGestures(
+            onDragStart = {
+                // Dragging started
+            },
+            onVerticalDrag = { change, dragAmount ->
+                change.consume()
+                coroutineScope.launch {
+                    val currentTransY = sheetTranslationY.value
+                    val currentHeight = contentHeightPxAnim.value
+
+                    if (currentTransY > 0f) {
+                        // Already translated downwards off-screen: continue translating
+                        val nextTrans = (currentTransY + dragAmount).coerceAtLeast(0f)
+                        sheetTranslationY.snapTo(nextTrans)
+                    } else {
+                        // Bottom edge stays stuck to the bottom of the screen (transY == 0f)!
+                        // Dragging UP is negative dragAmount -> increases content height
+                        val proposedHeight = currentHeight - dragAmount
+                        if (proposedHeight > tallContentHeightPx) {
+                            // Rubber band resistance past tall height
+                            val excess = proposedHeight - tallContentHeightPx
+                            contentHeightPxAnim.snapTo(tallContentHeightPx + (excess * 0.15f))
+                        } else if (proposedHeight >= shortContentHeightPx) {
+                            // Dragging between short and tall: bottom edge stays glued, height resizes!
+                            contentHeightPxAnim.snapTo(proposedHeight)
+                        } else {
+                            // Dragged down past short height: pin height at short, and translate down off-screen!
+                            contentHeightPxAnim.snapTo(shortContentHeightPx)
+                            val excessDown = shortContentHeightPx - proposedHeight
+                            sheetTranslationY.snapTo(excessDown)
+                        }
+                    }
+                }
+            },
+            onDragEnd = {
+                coroutineScope.launch {
+                    val currentTransY = sheetTranslationY.value
+                    val currentHeight = contentHeightPxAnim.value
+
+                    if (currentTransY > thresholdPx * 1.2f) {
+                        // Dragged down past short resting position into dismiss territory -> Dismiss!
+                        dismissSheet()
+                    } else if (currentTransY > 0f) {
+                        // Released before dismiss threshold: spring back to short resting position
+                        sheetTranslationY.animateTo(
+                            targetValue = 0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        )
+                        contentHeightPxAnim.animateTo(
+                            targetValue = shortContentHeightPx,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        )
+                        isFullscreen = false
+                    } else {
+                        // Dragged between short and tall: snap to closest state
+                        val midpoint = (shortContentHeightPx + tallContentHeightPx) * 0.5f
+                        val targetHeight = if (currentHeight > midpoint) {
+                            isFullscreen = true
+                            tallContentHeightPx
+                        } else {
+                            isFullscreen = false
+                            shortContentHeightPx
+                        }
+
+                        contentHeightPxAnim.animateTo(
+                            targetValue = targetHeight,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        )
+                        sheetTranslationY.animateTo(
+                            targetValue = 0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        )
+                    }
+                }
+            },
+            onDragCancel = {
+                coroutineScope.launch {
+                    sheetTranslationY.animateTo(
+                        targetValue = 0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                    contentHeightPxAnim.animateTo(
+                        targetValue = if (isFullscreen) tallContentHeightPx else shortContentHeightPx,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                }
+            }
+        )
+    }
+
+    val scrimAlpha = (0.45f * (1f - (sheetTranslationY.value / screenHeightPx))).coerceIn(0f, 0.45f)
+
+    // Scrim / backdrop dismissable area: clicking outside discards and smoothly slides down
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
-            .clickable { onDismiss() },
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = scrimAlpha))
+            .pointerInput(Unit) {
+                detectTapGestures {
+                    dismissSheet()
+                }
+            },
         contentAlignment = Alignment.BottomCenter
     ) {
         // Bottom Sheet Surface
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .imePadding()
-                .then(if (isFullscreen) Modifier.fillMaxHeight(0.92f) else Modifier)
-                .clickable(enabled = false) {}, // Prevent dismiss click inside sheet
+                .graphicsLayer {
+                    translationY = sheetTranslationY.value.coerceAtLeast(0f)
+                }
+                .pointerInput(Unit) {
+                    detectTapGestures {
+                        // Consume all clicks inside sheet so they never dismiss
+                    }
+                }
+                .imePadding(),
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             color = MaterialTheme.colorScheme.surfaceContainer,
             tonalElevation = 8.dp
@@ -269,19 +563,26 @@ fun InputBottomSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp)
+                    .padding(horizontal = 24.dp, vertical = 12.dp)
             ) {
-                // Drag handle
+                // Drag handle area with vertical drag gestures (swipe up for full screen, swipe down for short/dismiss)
                 Box(
                     modifier = Modifier
-                        .width(32.dp)
-                        .height(4.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.outlineVariant)
-                        .align(Alignment.CenterHorizontally)
-                )
+                        .fillMaxWidth()
+                        .height(32.dp)
+                        .then(dragGestureModifier),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(36.dp)
+                            .height(4.5.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.outlineVariant)
+                    )
+                }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // M3 Single-Select Segmented Buttons with proper outlineVariant border
                 val segmentedBorder = SegmentedButtonDefaults.borderStroke(
@@ -401,70 +702,87 @@ fun InputBottomSheet(
                     }
                 }
 
+                val requestPermissionAction = {
+                    val intent = Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        putExtra("REQUEST_AUDIO_PERMISSION", true)
+                    }
+                    context.startActivity(intent)
+                }
+
                 // Tab Content
                 when (selectedTabIndex) {
                     0 -> {
                         // Dictate (Native text transcription preview - Read-only with Recording/Paused indicator)
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(130.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest
-                        ) {
-                            Column(
+                        if (!hasMicPermission) {
+                            MicrophonePermissionCard(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                                    .fillMaxWidth()
+                                    .height(animatedContentHeightDp),
+                                onRequestPermission = requestPermissionAction
+                            )
+                        } else {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(animatedContentHeightDp),
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
-                                // Status indicator header inside container (matches Record box)
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp)
                                 ) {
+                                    // Status indicator header inside container (matches Record box)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isVoiceListening)
+                                                        MaterialTheme.colorScheme.tertiary
+                                                    else
+                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                        )
+                                        Text(
+                                            text = if (isVoiceListening) "Listening" else "Paused",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isVoiceListening)
+                                                MaterialTheme.colorScheme.tertiary
+                                            else
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
                                     Box(
                                         modifier = Modifier
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (isVoiceListening)
-                                                    MaterialTheme.colorScheme.tertiary
-                                                else
-                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                            .fillMaxWidth()
+                                            .weight(1f)
+                                            .verticalScroll(rememberScrollState())
+                                    ) {
+                                        if (voiceText.isBlank()) {
+                                            Text(
+                                                text = "Transcribed speech will appear here...",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                             )
-                                    )
-                                    Text(
-                                        text = if (isVoiceListening) "Listening" else "Paused",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isVoiceListening)
-                                            MaterialTheme.colorScheme.tertiary
-                                        else
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f)
-                                        .verticalScroll(rememberScrollState())
-                                ) {
-                                    if (voiceText.isBlank()) {
-                                        Text(
-                                            text = "Transcribed speech will appear here...",
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                        )
-                                    } else {
-                                        Text(
-                                            text = voiceText,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
+                                        } else {
+                                            Text(
+                                                text = voiceText,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -480,7 +798,11 @@ fun InputBottomSheet(
                         ) {
                             FilledTonalIconButton(
                                 onClick = {
-                                    if (isVoiceListening) stopListening() else startListening()
+                                    if (!hasMicPermission) {
+                                        requestPermissionAction()
+                                    } else {
+                                        if (isVoiceListening) stopListening() else startListening()
+                                    }
                                 },
                                 modifier = Modifier.size(48.dp)
                             ) {
@@ -492,7 +814,9 @@ fun InputBottomSheet(
                             Button(
                                 onClick = {
                                     stopListening()
-                                    onSend("speech_to_text", voiceText, null, activeAttachment, activeAttachmentMime)
+                                    dismissSheet {
+                                        onSend("speech_to_text", voiceText, null, activeAttachment, activeAttachmentMime)
+                                    }
                                 },
                                 modifier = Modifier
                                     .weight(1f)
@@ -510,67 +834,76 @@ fun InputBottomSheet(
                         val seconds = recordingDurationSeconds % 60
                         val formattedTime = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
 
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(130.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest
-                        ) {
-                            Box(
+                        if (!hasMicPermission) {
+                            MicrophonePermissionCard(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                                    .fillMaxWidth()
+                                    .height(animatedContentHeightDp),
+                                onRequestPermission = requestPermissionAction
+                            )
+                        } else {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(animatedContentHeightDp),
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
-                                // Status & Timestamp header inside container
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp)
                                 ) {
+                                    // Status & Timestamp header inside container
                                     Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .clip(CircleShape)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
                                                 .background(
                                                     if (isAudioRecording && !isAudioPaused)
                                                         MaterialTheme.colorScheme.tertiary
                                                     else
                                                         MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
-                                        )
+                                            )
+                                            Text(
+                                                text = if (isAudioRecording && !isAudioPaused) "Recording" else "Paused",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isAudioRecording && !isAudioPaused)
+                                                    MaterialTheme.colorScheme.tertiary
+                                                else
+                                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
                                         Text(
-                                            text = if (isAudioRecording && !isAudioPaused) "Recording" else "Paused",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isAudioRecording && !isAudioPaused)
-                                                MaterialTheme.colorScheme.tertiary
-                                            else
-                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            text = formattedTime,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                     }
 
-                                    Text(
-                                        text = formattedTime,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                    // Centered Real-time Waveform Visualizer
+                                    AudioWaveformVisualizer(
+                                        isRecording = isAudioRecording && !isAudioPaused,
+                                        mediaRecorder = mediaRecorder,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(56.dp)
+                                            .align(Alignment.Center)
                                     )
                                 }
-
-                                // Centered Real-time Waveform Visualizer
-                                AudioWaveformVisualizer(
-                                    isRecording = isAudioRecording && !isAudioPaused,
-                                    mediaRecorder = mediaRecorder,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(56.dp)
-                                        .align(Alignment.Center)
-                                )
                             }
                         }
 
@@ -584,22 +917,26 @@ fun InputBottomSheet(
                         ) {
                             FilledTonalIconButton(
                                 onClick = {
-                                    if (isAudioRecording && !isAudioPaused) {
-                                        try {
-                                            mediaRecorder?.pause()
-                                            isAudioPaused = true
-                                        } catch (e: Exception) {
-                                            Log.e("InputBottomSheet", "Failed to pause audio recording", e)
-                                        }
+                                    if (!hasMicPermission) {
+                                        requestPermissionAction()
                                     } else {
-                                        if (!isAudioRecording) {
-                                            startAudioRecording()
-                                        } else {
+                                        if (isAudioRecording && !isAudioPaused) {
                                             try {
-                                                mediaRecorder?.resume()
-                                                isAudioPaused = false
+                                                mediaRecorder?.pause()
+                                                isAudioPaused = true
                                             } catch (e: Exception) {
-                                                Log.e("InputBottomSheet", "Failed to resume audio recording", e)
+                                                Log.e("InputBottomSheet", "Failed to pause audio recording", e)
+                                            }
+                                        } else {
+                                            if (!isAudioRecording) {
+                                                startAudioRecording()
+                                            } else {
+                                                try {
+                                                    mediaRecorder?.resume()
+                                                    isAudioPaused = false
+                                                } catch (e: Exception) {
+                                                    Log.e("InputBottomSheet", "Failed to resume audio recording", e)
+                                                }
                                             }
                                         }
                                     }
@@ -620,7 +957,9 @@ fun InputBottomSheet(
                                             Base64.encodeToString(bytes, Base64.NO_WRAP)
                                         } else null
                                     }
-                                    onSend("mic_audio", null, b64, activeAttachment, activeAttachmentMime)
+                                    dismissSheet {
+                                        onSend("mic_audio", null, b64, activeAttachment, activeAttachmentMime)
+                                    }
                                 },
                                 modifier = Modifier
                                     .weight(1f)
@@ -637,7 +976,7 @@ fun InputBottomSheet(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .then(if (isFullscreen) Modifier.fillMaxHeight(0.75f) else Modifier.height(130.dp))
+                                .height(animatedContentHeightDp)
                         ) {
                             OutlinedTextField(
                                 value = textInput,
@@ -648,7 +987,19 @@ fun InputBottomSheet(
                             )
 
                             IconButton(
-                                onClick = { isFullscreen = !isFullscreen },
+                                onClick = {
+                                    val newFullscreen = !isFullscreen
+                                    isFullscreen = newFullscreen
+                                    coroutineScope.launch {
+                                        contentHeightPxAnim.animateTo(
+                                            targetValue = if (newFullscreen) tallContentHeightPx else shortContentHeightPx,
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            )
+                                        )
+                                    }
+                                },
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
                                     .padding(end = 4.dp, bottom = 4.dp)
@@ -670,7 +1021,9 @@ fun InputBottomSheet(
                             Button(
                                 onClick = {
                                     val type = if (initialTab == "clipboard_paste") "clipboard_paste" else "text_snippet"
-                                    onSend(type, textInput, null, activeAttachment, activeAttachmentMime)
+                                    dismissSheet {
+                                        onSend(type, textInput, null, activeAttachment, activeAttachmentMime)
+                                    }
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -754,6 +1107,52 @@ fun AudioWaveformVisualizer(
                 size = Size(barWidth, barHeight),
                 cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
             )
+        }
+    }
+}
+
+@Composable
+private fun MicrophonePermissionCard(
+    modifier: Modifier = Modifier,
+    onRequestPermission: () -> Unit
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHighest
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.MicOff,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(36.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Microphone Permission Required",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Allow microphone access to dictate or record audio.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(
+                onClick = onRequestPermission
+            ) {
+                Text("Grant Permission")
+            }
         }
     }
 }
