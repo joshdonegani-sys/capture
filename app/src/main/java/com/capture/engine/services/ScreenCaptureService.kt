@@ -170,70 +170,102 @@ class ScreenCaptureService : Service() {
         }
     }
 
+    private fun processImageToBitmap(image: android.media.Image, cropRect: Rect?): Bitmap? {
+        val planes = image.planes
+        val buffer = planes[0].buffer
+        val pixelStride = planes[0].pixelStride
+        val rowStride = planes[0].rowStride
+        val rowPadding = rowStride - pixelStride * screenWidth
+
+        val bitmap = Bitmap.createBitmap(
+            screenWidth + rowPadding / pixelStride,
+            screenHeight,
+            Bitmap.Config.ARGB_8888
+        )
+        bitmap.copyPixelsFromBuffer(buffer)
+
+        val cleanBitmap = Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
+        if (cleanBitmap != bitmap) {
+            bitmap.recycle()
+        }
+
+        // Handle Point Mode crop
+        return if (cropRect != null && !cropRect.isEmpty) {
+            val safeLeft = cropRect.left.coerceIn(0, screenWidth - 1)
+            val safeTop = cropRect.top.coerceIn(0, screenHeight - 1)
+            val safeWidth = cropRect.width().coerceIn(1, screenWidth - safeLeft)
+            val safeHeight = cropRect.height().coerceIn(1, screenHeight - safeTop)
+
+            val cropped = Bitmap.createBitmap(cleanBitmap, safeLeft, safeTop, safeWidth, safeHeight)
+            if (cropped != cleanBitmap) {
+                cleanBitmap.recycle()
+            }
+            cropped
+        } else {
+            cleanBitmap
+        }
+    }
+
     suspend fun captureScreenBase64(cropRect: Rect? = null): String? = withContext(Dispatchers.IO) {
-        if (mediaProjection == null || imageReader == null) {
+        val reader = imageReader
+        if (mediaProjection == null || reader == null) {
             Log.w(TAG, "MediaProjection or ImageReader not initialized")
             return@withContext null
         }
 
-        val deferredImage = CompletableDeferred<Bitmap?>()
-
-        imageReader?.setOnImageAvailableListener({ reader ->
+        // 1. Try to acquire the latest image immediately if one is already buffered
+        var immediateBitmap: Bitmap? = null
+        try {
             val image = reader.acquireLatestImage()
             if (image != null) {
                 try {
-                    val planes = image.planes
-                    val buffer = planes[0].buffer
-                    val pixelStride = planes[0].pixelStride
-                    val rowStride = planes[0].rowStride
-                    val rowPadding = rowStride - pixelStride * screenWidth
+                    immediateBitmap = processImageToBitmap(image, cropRect)
+                } finally {
+                    image.close()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in immediate acquireLatestImage", e)
+        }
 
-                    val bitmap = Bitmap.createBitmap(
-                        screenWidth + rowPadding / pixelStride,
-                        screenHeight,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    bitmap.copyPixelsFromBuffer(buffer)
+        val bitmap: Bitmap? = if (immediateBitmap != null) {
+            immediateBitmap
+        } else {
+            val deferredImage = CompletableDeferred<Bitmap?>()
+            val mainHandler = Handler(Looper.getMainLooper())
 
-                    val cleanBitmap = Bitmap.createBitmap(bitmap, 0, 0, screenWidth, screenHeight)
-                    if (cleanBitmap != bitmap) {
-                        bitmap.recycle()
-                    }
-
-                    // Handle Point Mode crop
-                    val finalBitmap = if (cropRect != null && !cropRect.isEmpty) {
-                        val safeLeft = cropRect.left.coerceIn(0, screenWidth - 1)
-                        val safeTop = cropRect.top.coerceIn(0, screenHeight - 1)
-                        val safeWidth = cropRect.width().coerceIn(1, screenWidth - safeLeft)
-                        val safeHeight = cropRect.height().coerceIn(1, screenHeight - safeTop)
-
-                        val cropped = Bitmap.createBitmap(cleanBitmap, safeLeft, safeTop, safeWidth, safeHeight)
-                        if (cropped != cleanBitmap) {
-                            cleanBitmap.recycle()
+            reader.setOnImageAvailableListener({ r ->
+                try {
+                    val img = r.acquireLatestImage()
+                    if (img != null) {
+                        try {
+                            val bmp = processImageToBitmap(img, cropRect)
+                            if (!deferredImage.isCompleted) {
+                                deferredImage.complete(bmp)
+                            }
+                        } finally {
+                            img.close()
                         }
-                        cropped
-                    } else {
-                        cleanBitmap
-                    }
-
-                    if (!deferredImage.isCompleted) {
-                        deferredImage.complete(finalBitmap)
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error acquiring screenshot bitmap", e)
+                    Log.e(TAG, "Error acquiring screenshot bitmap in listener", e)
                     if (!deferredImage.isCompleted) {
                         deferredImage.complete(null)
                     }
                 } finally {
-                    image.close()
                     reader.setOnImageAvailableListener(null, null)
                 }
-            }
-        }, null)
+            }, mainHandler)
 
-        val bitmap = withTimeoutOrNull(2500) { deferredImage.await() }
+            val result = withTimeoutOrNull(2500) { deferredImage.await() }
+            if (result == null) {
+                reader.setOnImageAvailableListener(null, null)
+            }
+            result
+        }
+
         if (bitmap == null) {
-            imageReader?.setOnImageAvailableListener(null, null)
+            Log.w(TAG, "Failed to capture screenshot bitmap")
             return@withContext null
         }
 
@@ -243,6 +275,9 @@ class ScreenCaptureService : Service() {
             bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
             val bytes = outputStream.toByteArray()
             Base64.encodeToString(bytes, Base64.NO_WRAP)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error encoding screenshot to Base64", e)
+            null
         } finally {
             bitmap.recycle()
         }

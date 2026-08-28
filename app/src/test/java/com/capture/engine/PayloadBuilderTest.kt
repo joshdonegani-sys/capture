@@ -94,4 +94,65 @@ class PayloadBuilderTest {
         assertTrue(json.contains("\"screenshot_base64\": \"base64image==\""))
         assertTrue(json.contains("\"playback_state\": \"playing\""))
     }
+
+    @Test
+    fun `build converts blank strings to null when enabled`() {
+        val sources = ActiveContextSources(
+            screenGrab = true,
+            appTree = true,
+            highlightedText = true,
+            media = true
+        )
+
+        val payload = PayloadBuilder.build(
+            type = "text_snippet",
+            source = "process_text",
+            packageName = "com.example.app",
+            inputContent = "   ",
+            activeContextSources = sources,
+            mediaContext = null,
+            highlightedText = "   ",
+            targetedSelection = null,
+            appTreeText = "   \n  \t  ",
+            screenshotBase64 = null
+        )
+
+        assertNull(payload.inputContent)
+        assertNull(payload.highlightedText)
+        assertNull(payload.appTreeText)
+        assertNull(payload.screenshotBase64)
+        assertNull(payload.mediaContext)
+    }
+
+    @Test
+    fun `build ignores all context fields when all active sources are false`() {
+        val sources = ActiveContextSources(
+            screenGrab = false,
+            appTree = false,
+            highlightedText = false,
+            media = false
+        )
+
+        val payload = PayloadBuilder.build(
+            type = "clipboard_paste",
+            source = "floating_overlay",
+            packageName = "com.example.app",
+            inputContent = "Pasted text",
+            activeContextSources = sources,
+            mediaContext = MediaContext(title = "Should be excluded"),
+            highlightedText = "Should be excluded",
+            targetedSelection = "10,20,30,40",
+            appTreeText = "Should be excluded",
+            screenshotBase64 = "Should be excluded"
+        )
+
+        assertEquals("clipboard_paste", payload.type)
+        assertEquals("Pasted text", payload.inputContent)
+        assertNull(payload.screenshotBase64)
+        assertNull(payload.appTreeText)
+        assertNull(payload.highlightedText)
+        assertNull(payload.mediaContext)
+        // Targeted selection is preserved
+        assertEquals("10,20,30,40", payload.targetedSelection)
+    }
 }

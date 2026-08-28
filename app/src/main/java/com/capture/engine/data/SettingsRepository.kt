@@ -31,23 +31,57 @@ class SettingsRepository(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_OVERLAY_ENABLED, value).apply()
 
     // Context Source Toggles
+    private val _isScreenGrabActive = MutableStateFlow(prefs.getBoolean(KEY_SRC_SCREEN_GRAB, true))
+    val isScreenGrabActiveFlow: StateFlow<Boolean> = _isScreenGrabActive
+
     var isScreenGrabActive: Boolean
-        get() = prefs.getBoolean(KEY_SRC_SCREEN_GRAB, true)
-        set(value) = prefs.edit().putBoolean(KEY_SRC_SCREEN_GRAB, value).apply()
+        get() = _isScreenGrabActive.value
+        set(value) {
+            _isScreenGrabActive.value = value
+            prefs.edit().putBoolean(KEY_SRC_SCREEN_GRAB, value).apply()
+        }
+
+    private val _isAppTreeActive = MutableStateFlow(prefs.getBoolean(KEY_SRC_APP_TREE, true))
+    val isAppTreeActiveFlow: StateFlow<Boolean> = _isAppTreeActive
 
     var isAppTreeActive: Boolean
-        get() = prefs.getBoolean(KEY_SRC_APP_TREE, true)
-        set(value) = prefs.edit().putBoolean(KEY_SRC_APP_TREE, value).apply()
+        get() = _isAppTreeActive.value
+        set(value) {
+            _isAppTreeActive.value = value
+            prefs.edit().putBoolean(KEY_SRC_APP_TREE, value).apply()
+        }
+
+    private val _isHighlightedTextActive = MutableStateFlow(prefs.getBoolean(KEY_SRC_HIGHLIGHTED_TEXT, true))
+    val isHighlightedTextActiveFlow: StateFlow<Boolean> = _isHighlightedTextActive
 
     var isHighlightedTextActive: Boolean
-        get() = prefs.getBoolean(KEY_SRC_HIGHLIGHTED_TEXT, true)
-        set(value) = prefs.edit().putBoolean(KEY_SRC_HIGHLIGHTED_TEXT, value).apply()
+        get() = _isHighlightedTextActive.value
+        set(value) {
+            _isHighlightedTextActive.value = value
+            prefs.edit().putBoolean(KEY_SRC_HIGHLIGHTED_TEXT, value).apply()
+        }
+
+    private val _isMediaActive = MutableStateFlow(prefs.getBoolean(KEY_SRC_MEDIA, true))
+    val isMediaActiveFlow: StateFlow<Boolean> = _isMediaActive
 
     var isMediaActive: Boolean
-        get() = prefs.getBoolean(KEY_SRC_MEDIA, true)
-        set(value) = prefs.edit().putBoolean(KEY_SRC_MEDIA, value).apply()
+        get() = _isMediaActive.value
+        set(value) {
+            _isMediaActive.value = value
+            prefs.edit().putBoolean(KEY_SRC_MEDIA, value).apply()
+        }
 
     // Toolbar Customisation Settings
+    private val _toolbarForceOpenForPreview = MutableStateFlow(prefs.getBoolean(KEY_TOOLBAR_FORCE_OPEN_FOR_PREVIEW, false))
+    val toolbarForceOpenForPreviewFlow: StateFlow<Boolean> = _toolbarForceOpenForPreview
+
+    var toolbarForceOpenForPreview: Boolean
+        get() = _toolbarForceOpenForPreview.value
+        set(value) {
+            _toolbarForceOpenForPreview.value = value
+            prefs.edit().putBoolean(KEY_TOOLBAR_FORCE_OPEN_FOR_PREVIEW, value).apply()
+        }
+
     private val _toolbarIconSize = MutableStateFlow(prefs.getFloat(KEY_TOOLBAR_ICON_SIZE, 24f))
     val toolbarIconSizeFlow: StateFlow<Float> = _toolbarIconSize
 
@@ -66,6 +100,27 @@ class SettingsRepository(context: Context) {
         set(value) {
             _toolbarAlpha.value = value
             prefs.edit().putFloat(KEY_TOOLBAR_ALPHA, value).apply()
+        }
+
+    // Tonal & Shadow Elevation Settings
+    private val _toolbarTonalElevation = MutableStateFlow(prefs.getFloat(KEY_TOOLBAR_TONAL_ELEVATION, 4f))
+    val toolbarTonalElevationFlow: StateFlow<Float> = _toolbarTonalElevation
+
+    var toolbarTonalElevation: Float
+        get() = _toolbarTonalElevation.value
+        set(value) {
+            _toolbarTonalElevation.value = value
+            prefs.edit().putFloat(KEY_TOOLBAR_TONAL_ELEVATION, value).apply()
+        }
+
+    private val _toolbarShadowElevation = MutableStateFlow(prefs.getFloat(KEY_TOOLBAR_SHADOW_ELEVATION, 4f))
+    val toolbarShadowElevationFlow: StateFlow<Float> = _toolbarShadowElevation
+
+    var toolbarShadowElevation: Float
+        get() = _toolbarShadowElevation.value
+        set(value) {
+            _toolbarShadowElevation.value = value
+            prefs.edit().putFloat(KEY_TOOLBAR_SHADOW_ELEVATION, value).apply()
         }
 
     private val _inputSelectionDisplayMode = MutableStateFlow(prefs.getString(KEY_INPUT_SELECTION_MODE, "all") ?: "all")
@@ -182,14 +237,18 @@ class SettingsRepository(context: Context) {
         }
 
     // Sub Connection: "separate" or "joined"
-    private val _toolbarSubConnection = MutableStateFlow(prefs.getString(KEY_TOOLBAR_SUB_CONNECTION, "separate") ?: "separate")
+    private val _toolbarSubConnection = MutableStateFlow(
+        if (prefs.getString(KEY_TOOLBAR_AWAKE_STYLE, "double icon") == "single icon") "joined"
+        else (prefs.getString(KEY_TOOLBAR_SUB_CONNECTION, "separate") ?: "separate")
+    )
     val toolbarSubConnectionFlow: StateFlow<String> = _toolbarSubConnection
 
     var toolbarSubConnection: String
-        get() = _toolbarSubConnection.value
+        get() = if (_toolbarAwakeStyle.value == "single icon") "joined" else _toolbarSubConnection.value
         set(value) {
-            _toolbarSubConnection.value = value
-            prefs.edit().putString(KEY_TOOLBAR_SUB_CONNECTION, value).apply()
+            val effectiveValue = if (_toolbarAwakeStyle.value == "single icon") "joined" else value
+            _toolbarSubConnection.value = effectiveValue
+            prefs.edit().putString(KEY_TOOLBAR_SUB_CONNECTION, effectiveValue).apply()
         }
 
     // Sub Align: "full base" or "base icon"
@@ -212,6 +271,17 @@ class SettingsRepository(context: Context) {
         set(value) {
             _toolbarSubAlignModifier.value = value
             prefs.edit().putString(KEY_TOOLBAR_SUB_ALIGN_MODIFIER, value).apply()
+        }
+
+    // Stay on screen (Smart Edge Avoidance)
+    private val _toolbarStayOnScreen = MutableStateFlow(prefs.getBoolean(KEY_TOOLBAR_STAY_ON_SCREEN, true))
+    val toolbarStayOnScreenFlow: StateFlow<Boolean> = _toolbarStayOnScreen
+
+    var toolbarStayOnScreen: Boolean
+        get() = _toolbarStayOnScreen.value
+        set(value) {
+            _toolbarStayOnScreen.value = value
+            prefs.edit().putBoolean(KEY_TOOLBAR_STAY_ON_SCREEN, value).apply()
         }
 
     // Dormant State Config
@@ -265,6 +335,9 @@ class SettingsRepository(context: Context) {
         set(value) {
             _toolbarAwakeStyle.value = value
             prefs.edit().putString(KEY_TOOLBAR_AWAKE_STYLE, value).apply()
+            if (value == "single icon") {
+                toolbarSubConnection = "joined"
+            }
         }
 
     private val _toolbarAwakeLocked = MutableStateFlow(prefs.getBoolean(KEY_TOOLBAR_AWAKE_LOCKED, false))
@@ -332,8 +405,11 @@ class SettingsRepository(context: Context) {
         private const val KEY_SRC_HIGHLIGHTED_TEXT = "source_highlighted_text"
         private const val KEY_SRC_MEDIA = "source_media"
 
+        private const val KEY_TOOLBAR_FORCE_OPEN_FOR_PREVIEW = "toolbar_force_open_for_preview"
         private const val KEY_TOOLBAR_ICON_SIZE = "toolbar_icon_size"
         private const val KEY_TOOLBAR_ALPHA = "toolbar_alpha"
+        private const val KEY_TOOLBAR_TONAL_ELEVATION = "toolbar_tonal_elevation"
+        private const val KEY_TOOLBAR_SHADOW_ELEVATION = "toolbar_shadow_elevation"
         private const val KEY_INPUT_SELECTION_MODE = "input_selection_mode"
         private const val KEY_LAST_USED_INPUT = "last_used_input"
 
@@ -349,6 +425,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_TOOLBAR_SUB_CONNECTION = "toolbar_sub_connection"
         private const val KEY_TOOLBAR_SUB_ALIGN = "toolbar_sub_align"
         private const val KEY_TOOLBAR_SUB_ALIGN_MODIFIER = "toolbar_sub_align_modifier"
+        private const val KEY_TOOLBAR_STAY_ON_SCREEN = "toolbar_stay_on_screen"
 
         private const val KEY_TOOLBAR_DORMANT_STYLE = "toolbar_dormant_style"
         private const val KEY_TOOLBAR_DORMANT_LOCKED = "toolbar_dormant_locked"

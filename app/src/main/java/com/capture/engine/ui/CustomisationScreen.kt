@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.ViewStream
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -73,6 +74,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -98,6 +100,14 @@ fun CustomisationScreen(
 ) {
     val settings = remember { CaptureApplication.instance.settingsRepository }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            settings.toolbarForceOpenForPreview = false
+        }
+    }
+
+    val forceOpenForPreview by settings.toolbarForceOpenForPreviewFlow.collectAsState()
+
     // Core Settings Flow
     val iconSize by settings.toolbarIconSizeFlow.collectAsState()
     val alpha by settings.toolbarAlphaFlow.collectAsState()
@@ -105,6 +115,8 @@ fun CustomisationScreen(
     val customSeedColor by settings.toolbarCustomSeedColorFlow.collectAsState()
     val visibleInputIcons by settings.visibleInputIconsFlow.collectAsState()
     val lastUsedInput by settings.lastUsedInputTypeFlow.collectAsState()
+    val tonalElevation by settings.toolbarTonalElevationFlow.collectAsState()
+    val shadowElevation by settings.toolbarShadowElevationFlow.collectAsState()
 
     // Toolbar Layout Settings
     val baseLayout by settings.toolbarBaseLayoutFlow.collectAsState()
@@ -113,6 +125,7 @@ fun CustomisationScreen(
     val subConnection by settings.toolbarSubConnectionFlow.collectAsState()
     val subAlign by settings.toolbarSubAlignFlow.collectAsState()
     val subAlignModifier by settings.toolbarSubAlignModifierFlow.collectAsState()
+    val stayOnScreen by settings.toolbarStayOnScreenFlow.collectAsState()
 
     // Dormant & Awake Configs
     val dormantStyle by settings.toolbarDormantStyleFlow.collectAsState()
@@ -162,6 +175,61 @@ fun CustomisationScreen(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
+        }
+
+        // --- 0. FORCE OPEN FOR PREVIEW CARD ---
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = if (forceOpenForPreview) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                } else {
+                    MaterialTheme.colorScheme.surface
+                }
+            ),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(
+                1.dp,
+                if (forceOpenForPreview) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f).padding(end = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Visibility,
+                        contentDescription = null,
+                        tint = if (forceOpenForPreview) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "Force open for preview",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Keeps subgroup expanded on the live floating toolbar so you can preview appearance, position, and size.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Switch(
+                    checked = forceOpenForPreview,
+                    onCheckedChange = { isChecked ->
+                        settings.toolbarForceOpenForPreview = isChecked
+                    }
+                )
+            }
         }
 
         // --- 1. LIVE PREVIEW CARD (Hidden for now, preserved for later) ---
@@ -225,6 +293,7 @@ fun CustomisationScreen(
                             baseLayout = baseLayout,
                             subLayout = subLayout,
                             subDirection = subDirection,
+                            subConnection = if (awakeStyle == "single icon") "joined" else subConnection,
                             subAlign = subAlign,
                             subAlignModifier = subAlignModifier,
                             expandedTarget = if (awakeStyle == "all icons") ExpandedTarget.JOINED_BOTH else previewExpandedTarget,
@@ -255,7 +324,9 @@ fun CustomisationScreen(
                             onMediaChange = {},
                             onTogglePointMode = {},
                             onSelectAllContext = {},
-                            onSelectNoneContext = {}
+                            onSelectNoneContext = {},
+                            tonalElevation = tonalElevation.dp,
+                            shadowElevation = shadowElevation.dp
                         )
                     }
                 }
@@ -521,6 +592,16 @@ fun CustomisationScreen(
                         }
                     }
                 }
+
+                // Stay on Screen (Smart Avoidance) switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Stay on Screen", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Switch(checked = stayOnScreen, onCheckedChange = { settings.toolbarStayOnScreen = it })
+                }
             }
         }
 
@@ -698,6 +779,42 @@ fun CustomisationScreen(
                         onValueChange = { settings.toolbarIconSize = it },
                         valueRange = 18f..36f,
                         steps = 8
+                    )
+                }
+
+                // Tonal Elevation Slider
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Tonal Elevation", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text("${tonalElevation.toInt()} dp", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Slider(
+                        value = tonalElevation,
+                        onValueChange = { settings.toolbarTonalElevation = it },
+                        valueRange = 0f..16f,
+                        steps = 15
+                    )
+                }
+
+                // Shadow Elevation Slider
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Shadow Elevation", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text("${shadowElevation.toInt()} dp", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Slider(
+                        value = shadowElevation,
+                        onValueChange = { settings.toolbarShadowElevation = it },
+                        valueRange = 0f..16f,
+                        steps = 15
                     )
                 }
 

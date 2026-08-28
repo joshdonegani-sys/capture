@@ -17,6 +17,7 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.filled.MicOff
 import androidx.core.content.ContextCompat
+import com.capture.engine.CaptureApplication
 import com.capture.engine.services.AudioRecordService
 import com.capture.engine.ui.MainActivity
 import androidx.compose.animation.AnimatedVisibility
@@ -43,6 +44,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -124,6 +127,7 @@ fun InputBottomSheet(
     onSend: (type: String, textContent: String?, audioBase64: String?, attBase64: String?, attMime: String?) -> Unit
 ) {
     val context = LocalContext.current
+    val settings = remember { CaptureApplication.instance.settingsRepository }
     var selectedTabIndex by remember {
         mutableIntStateOf(
             when (initialTab) {
@@ -134,11 +138,16 @@ fun InputBottomSheet(
         )
     }
 
+    LaunchedEffect(initialTab) {
+        settings.lastUsedInputType = initialTab
+    }
+
     var isFullscreen by remember { mutableStateOf(false) }
     var activeAttachment by remember { mutableStateOf(attachmentBase64) }
     var activeAttachmentMime by remember { mutableStateOf(attachmentMime) }
 
     // Text state
+    val textFocusRequester = remember { FocusRequester() }
     var textInput by remember {
         mutableStateOf(
             prefilledText ?: if (initialTab == "clipboard_paste") {
@@ -348,13 +357,21 @@ fun InputBottomSheet(
         }
     }
 
-    // Auto-start recording if initial tab matches
+    // Auto-start recording or focus if initial tab matches
     LaunchedEffect(initialTab, hasMicPermission) {
         if (hasMicPermission) {
             if (initialTab == "speech_to_text") {
                 startListening()
             } else if (initialTab == "mic_audio") {
                 startAudioRecording()
+            }
+        }
+        if (initialTab == "text_snippet" || initialTab == "text") {
+            delay(150L)
+            try {
+                textFocusRequester.requestFocus()
+            } catch (e: Exception) {
+                // Focus request safely ignored if view detached
             }
         }
     }
@@ -600,6 +617,7 @@ fun InputBottomSheet(
                         selected = selectedTabIndex == 0,
                         onClick = {
                             selectedTabIndex = 0
+                            settings.lastUsedInputType = "speech_to_text"
                             if (isAudioRecording) stopAudioRecording()
                             if (!isVoiceListening) startListening()
                         },
@@ -619,6 +637,7 @@ fun InputBottomSheet(
                         selected = selectedTabIndex == 1,
                         onClick = {
                             selectedTabIndex = 1
+                            settings.lastUsedInputType = "mic_audio"
                             if (isVoiceListening) stopListening()
                             if (!isAudioRecording) startAudioRecording()
                         },
@@ -638,6 +657,7 @@ fun InputBottomSheet(
                         selected = selectedTabIndex == 2,
                         onClick = {
                             selectedTabIndex = 2
+                            settings.lastUsedInputType = if (initialTab == "clipboard_paste") "clipboard_paste" else "text_snippet"
                             stopListening()
                             stopAudioRecording()
                         },
@@ -740,17 +760,21 @@ fun InputBottomSheet(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .clip(CircleShape)
-                                                .background(
-                                                    if (isVoiceListening)
-                                                        MaterialTheme.colorScheme.tertiary
-                                                    else
-                                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                        )
+                                        if (isVoiceListening) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(MaterialTheme.colorScheme.tertiary)
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.Pause,
+                                                contentDescription = "Paused",
+                                                modifier = Modifier.size(10.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                         Text(
                                             text = if (isVoiceListening) "Listening" else "Paused",
                                             style = MaterialTheme.typography.labelSmall,
@@ -864,17 +888,21 @@ fun InputBottomSheet(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                .background(
-                                                    if (isAudioRecording && !isAudioPaused)
-                                                        MaterialTheme.colorScheme.tertiary
-                                                    else
-                                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                            if (isAudioRecording && !isAudioPaused) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .clip(CircleShape)
+                                                        .background(MaterialTheme.colorScheme.tertiary)
                                                 )
-                                            )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.Pause,
+                                                    contentDescription = "Paused",
+                                                    modifier = Modifier.size(10.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                             Text(
                                                 text = if (isAudioRecording && !isAudioPaused) "Recording" else "Paused",
                                                 style = MaterialTheme.typography.labelSmall,
@@ -981,7 +1009,9 @@ fun InputBottomSheet(
                             OutlinedTextField(
                                 value = textInput,
                                 onValueChange = { textInput = it },
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .focusRequester(textFocusRequester),
                                 placeholder = { Text("Add instructions or prompt for agent...") },
                                 shape = RoundedCornerShape(16.dp)
                             )

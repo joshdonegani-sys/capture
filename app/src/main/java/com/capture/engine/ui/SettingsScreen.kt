@@ -95,6 +95,12 @@ fun SettingsScreen(
         Settings.canDrawOverlays(context)
     } else true
 
+    // Context source states
+    val isScreenGrabActive by settings.isScreenGrabActiveFlow.collectAsState()
+    val isAppTreeActive by settings.isAppTreeActiveFlow.collectAsState()
+    val isHighlightedTextActive by settings.isHighlightedTextActiveFlow.collectAsState()
+    val isMediaActive by settings.isMediaActiveFlow.collectAsState()
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -171,6 +177,94 @@ fun SettingsScreen(
                         context.startActivity(intent)
                     }
                 )
+            }
+        }
+
+        // Section: Context Sources
+        Text(
+            text = "Active Context Sources",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Screen Grab Switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Screen Capture (Image)", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                        Text("Include Base64 JPEG screenshot in payload", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = isScreenGrabActive,
+                        onCheckedChange = { settings.isScreenGrabActive = it }
+                    )
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // App Tree Switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("App UI Tree", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                        Text("Include hierarchical UI elements & labels", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = isAppTreeActive,
+                        onCheckedChange = { settings.isAppTreeActive = it }
+                    )
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // Highlighted Text Switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Highlighted / Selected Text", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                        Text("Include user-selected text or focused input", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = isHighlightedTextActive,
+                        onCheckedChange = { settings.isHighlightedTextActive = it }
+                    )
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // Media Metadata Switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Media Session Metadata", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                        Text("Include active music/podcast playback context", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = isMediaActive,
+                        onCheckedChange = { settings.isMediaActive = it }
+                    )
+                }
             }
         }
 

@@ -10,6 +10,7 @@ object PayloadBuilder {
 
     private val gson: Gson = GsonBuilder()
         .setPrettyPrinting()
+        .disableHtmlEscaping()
         .serializeNulls()
         .create()
 
