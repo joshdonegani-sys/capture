@@ -80,6 +80,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -127,6 +128,9 @@ fun CustomisationScreen(
     var showColorDialog by remember { mutableStateOf(false) }
     var previewExpandedTarget by remember { mutableStateOf(ExpandedTarget.JOINED_BOTH) }
 
+    // Preserved for future use; currently hidden per user request
+    val showLivePreview = false
+
     val isDark = isSystemInDarkTheme()
     val previewColors = resolveToolbarColors(
         colorRole = colorRole,
@@ -160,98 +164,100 @@ fun CustomisationScreen(
             )
         }
 
-        // --- 1. LIVE PREVIEW CARD ---
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-            shape = RoundedCornerShape(20.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+        // --- 1. LIVE PREVIEW CARD (Hidden for now, preserved for later) ---
+        if (showLivePreview) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "LIVE INTERACTIVE PREVIEW",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    TextButton(
-                        onClick = {
-                            previewExpandedTarget = when (previewExpandedTarget) {
-                                ExpandedTarget.NONE -> ExpandedTarget.JOINED_BOTH
-                                ExpandedTarget.JOINED_BOTH -> ExpandedTarget.INPUT_ONLY
-                                ExpandedTarget.INPUT_ONLY -> ExpandedTarget.CONTEXT_ONLY
-                                ExpandedTarget.CONTEXT_ONLY -> ExpandedTarget.NONE
-                            }
-                        }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = when (previewExpandedTarget) {
-                                ExpandedTarget.NONE -> "Collapsed"
-                                ExpandedTarget.JOINED_BOTH -> "Joined Expanded"
-                                ExpandedTarget.INPUT_ONLY -> "Input Expanded"
-                                ExpandedTarget.CONTEXT_ONLY -> "Context Expanded"
-                            },
-                            style = MaterialTheme.typography.labelSmall
+                            text = "LIVE INTERACTIVE PREVIEW",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(
+                            onClick = {
+                                previewExpandedTarget = when (previewExpandedTarget) {
+                                    ExpandedTarget.NONE -> ExpandedTarget.JOINED_BOTH
+                                    ExpandedTarget.JOINED_BOTH -> ExpandedTarget.INPUT_ONLY
+                                    ExpandedTarget.INPUT_ONLY -> ExpandedTarget.CONTEXT_ONLY
+                                    ExpandedTarget.CONTEXT_ONLY -> ExpandedTarget.NONE
+                                }
+                            }
+                        ) {
+                            Text(
+                                text = when (previewExpandedTarget) {
+                                    ExpandedTarget.NONE -> "Collapsed"
+                                    ExpandedTarget.JOINED_BOTH -> "Joined Expanded"
+                                    ExpandedTarget.INPUT_ONLY -> "Input Expanded"
+                                    ExpandedTarget.CONTEXT_ONLY -> "Context Expanded"
+                                },
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+
+                    val buttonSize = (iconSize + 10f).dp.coerceIn(28.dp, 36.dp)
+                    val iconSizeDp = (iconSize - 4f).dp.coerceIn(15.dp, 19.dp)
+                    val menuButtonSize = (iconSize + 4f).dp.coerceIn(24.dp, 32.dp)
+                    val menuIconSizeDp = (iconSize - 4f).dp.coerceIn(15.dp, 19.dp)
+                    val dividerSize = (iconSize + 4f).dp
+
+                    Box(
+                        modifier = Modifier.padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        ToolbarLayoutEngine(
+                            baseLayout = baseLayout,
+                            subLayout = subLayout,
+                            subDirection = subDirection,
+                            subAlign = subAlign,
+                            subAlignModifier = subAlignModifier,
+                            expandedTarget = if (awakeStyle == "all icons") ExpandedTarget.JOINED_BOTH else previewExpandedTarget,
+                            isSingleIcon = awakeStyle == "single icon",
+                            colors = previewColors,
+                            buttonSize = buttonSize,
+                            iconSizeDp = iconSizeDp,
+                            menuButtonSize = menuButtonSize,
+                            menuIconSizeDp = menuIconSizeDp,
+                            dividerSize = dividerSize,
+                            lastUsedInput = lastUsedInput,
+                            visibleInputIcons = visibleInputIcons,
+                            hasActiveContext = true,
+                            screenGrab = true,
+                            appTree = false,
+                            highlightedText = true,
+                            media = false,
+                            pointActive = false,
+                            activeSelection = null,
+                            onInputClick = {},
+                            onInputLongClick = {},
+                            onContextClick = {},
+                            onContextLongClick = {},
+                            onInputSubSelected = {},
+                            onScreenGrabChange = {},
+                            onAppTreeChange = {},
+                            onHighlightedTextChange = {},
+                            onMediaChange = {},
+                            onTogglePointMode = {},
+                            onSelectAllContext = {},
+                            onSelectNoneContext = {}
                         )
                     }
-                }
-
-                val buttonSize = (iconSize + 14f).dp
-                val iconSizeDp = (iconSize - 2f).dp.coerceAtLeast(16.dp)
-                val menuButtonSize = (iconSize + 6f).dp.coerceIn(28.dp, 36.dp)
-                val menuIconSizeDp = (iconSize - 4f).dp.coerceIn(16.dp, 20.dp)
-                val dividerSize = (iconSize + 4f).dp
-
-                Box(
-                    modifier = Modifier.padding(12.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    ToolbarLayoutEngine(
-                        baseLayout = baseLayout,
-                        subLayout = subLayout,
-                        subDirection = subDirection,
-                        subAlign = subAlign,
-                        subAlignModifier = subAlignModifier,
-                        expandedTarget = if (awakeStyle == "all icons") ExpandedTarget.JOINED_BOTH else previewExpandedTarget,
-                        isSingleIcon = awakeStyle == "single icon",
-                        colors = previewColors,
-                        buttonSize = buttonSize,
-                        iconSizeDp = iconSizeDp,
-                        menuButtonSize = menuButtonSize,
-                        menuIconSizeDp = menuIconSizeDp,
-                        dividerSize = dividerSize,
-                        lastUsedInput = lastUsedInput,
-                        visibleInputIcons = visibleInputIcons,
-                        hasActiveContext = true,
-                        screenGrab = true,
-                        appTree = false,
-                        highlightedText = true,
-                        media = false,
-                        pointActive = false,
-                        activeSelection = null,
-                        onInputClick = {},
-                        onInputLongClick = {},
-                        onContextClick = {},
-                        onContextLongClick = {},
-                        onInputSubSelected = {},
-                        onScreenGrabChange = {},
-                        onAppTreeChange = {},
-                        onHighlightedTextChange = {},
-                        onMediaChange = {},
-                        onTogglePointMode = {},
-                        onSelectAllContext = {},
-                        onSelectNoneContext = {}
-                    )
                 }
             }
         }
@@ -267,7 +273,7 @@ fun CustomisationScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -306,15 +312,6 @@ fun CustomisationScreen(
                             Text("All Icons")
                         }
                     }
-                    Text(
-                        text = when (awakeStyle) {
-                            "single icon" -> "Single Icon: Shows only the last used input type. Expands both sub-groups simultaneously."
-                            "all icons" -> "All Icons: Base nodes skipped. Subgroups rendered directly as a single cluster."
-                            else -> "Double Icon: Renders both Input Type and Context Menu base nodes."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
 
                 // Awake Position Mode
@@ -343,15 +340,6 @@ fun CustomisationScreen(
                             Text("Always Docked")
                         }
                     }
-                    Text(
-                        text = when (awakePosition) {
-                            "free" -> "Free: Absolute X,Y placement anywhere on screen."
-                            "dockable" -> "Dockable: Snaps cleanly to viewport edges when dragged near boundaries."
-                            else -> "Always Docked: Restricted strictly to 1D track along the viewport edge."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
 
                 // Awake Locked switch
@@ -360,16 +348,56 @@ fun CustomisationScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Lock Awake Position", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                        Text("Disables drag gestures when awake.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("Lock Awake Position", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Switch(checked = awakeLocked, onCheckedChange = { settings.toolbarAwakeLocked = it })
                 }
+            }
+        }
 
-                // If All Icons, show Order Setting
+        // --- 3. BASE & SUB LAYOUT ENGINE CARD ---
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Default.Dashboard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text("Base & Sub Layout Rules", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                }
+
+                // Base Layout (Row / Column)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Base Container Axis", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = baseLayout == "horiz",
+                            onClick = { settings.toolbarBaseLayout = "horiz" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                        ) {
+                            Text("Row")
+                        }
+                        SegmentedButton(
+                            selected = baseLayout == "vert",
+                            onClick = { settings.toolbarBaseLayout = "vert" },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                        ) {
+                            Text("Column")
+                        }
+                    }
+                }
+
+                // All Icons Cluster Order - Immediately below Base Container Axis
                 if (awakeStyle == "all icons") {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("All Icons Cluster Order", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         val orderOptions = if (baseLayout == "horiz") listOf("inner", "outer", "left", "right") else listOf("inner", "outer", "up", "down")
@@ -384,81 +412,11 @@ fun CustomisationScreen(
                                 }
                             }
                         }
-                        Text(
-                            text = "Inner/Outer dynamically swaps based on distance to the screen center axis.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        // --- 3. BASE & SUB LAYOUT ENGINE CARD (Active when not All Icons) ---
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(Icons.Default.Dashboard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text("Base & Sub Layout Rules", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                }
-
-                // Base Layout (Horizontal / Vertical)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Base Container Axis", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        SegmentedButton(
-                            selected = baseLayout == "horiz",
-                            onClick = { settings.toolbarBaseLayout = "horiz" },
-                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                        ) {
-                            Text("Horizontal (Row)")
-                        }
-                        SegmentedButton(
-                            selected = baseLayout == "vert",
-                            onClick = { settings.toolbarBaseLayout = "vert" },
-                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                        ) {
-                            Text("Vertical (Column)")
-                        }
                     }
                 }
 
                 if (awakeStyle != "all icons") {
-                    // Sub Layout (Flow Axis vs Cross Axis)
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Sub Expansion Axis", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                            SegmentedButton(
-                                selected = subLayout == "flow axis",
-                                onClick = { settings.toolbarSubLayout = "flow axis" },
-                                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                            ) {
-                                Text("Flow Axis (Parallel)")
-                            }
-                            SegmentedButton(
-                                selected = subLayout == "cross axis",
-                                onClick = { settings.toolbarSubLayout = "cross axis" },
-                                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                            ) {
-                                Text("Cross Axis (Perpendicular)")
-                            }
-                        }
-                    }
-
-                    // Sub Direction (Down, Up, Left, Right)
+                    // Sub Physical Direction (Down, Up, Left, Right)
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Sub Physical Direction", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -474,68 +432,90 @@ fun CustomisationScreen(
                         }
                     }
 
-                    // Sub Connection (Separate vs Joined)
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Sub Expansion Connection", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                            SegmentedButton(
-                                selected = subConnection == "separate" && awakeStyle != "single icon",
-                                onClick = { settings.toolbarSubConnection = "separate" },
-                                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                                enabled = awakeStyle != "single icon"
-                            ) {
-                                Text("Separate")
+                    // Sub Expansion Axis (Parallel vs Perpendicular) - Immediately before Sub Expansion Connection, hidden for Single Icon
+                    if (awakeStyle != "single icon") {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Sub Expansion Axis", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                SegmentedButton(
+                                    selected = subLayout == "flow axis",
+                                    onClick = { settings.toolbarSubLayout = "flow axis" },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                                ) {
+                                    Text("Parallel")
+                                }
+                                SegmentedButton(
+                                    selected = subLayout == "cross axis",
+                                    onClick = { settings.toolbarSubLayout = "cross axis" },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                                ) {
+                                    Text("Perpendicular")
+                                }
                             }
-                            SegmentedButton(
-                                selected = subConnection == "joined" || awakeStyle == "single icon",
-                                onClick = { settings.toolbarSubConnection = "joined" },
-                                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                                enabled = awakeStyle != "single icon"
-                            ) {
-                                Text("Joined")
-                            }
-                        }
-                        if (awakeStyle == "single icon") {
-                            Text("Single Icon awake style automatically forces Joined connection.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                         }
                     }
 
-                    // Sub Align (Flow Axis only)
-                    if (subLayout == "flow axis") {
+                    // Sub Expansion Connection (Separate vs Joined) - Hidden for Single Icon
+                    if (awakeStyle != "single icon") {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Sub Alignment (Flow Axis)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text("Sub Expansion Connection", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                                 SegmentedButton(
-                                    selected = subAlign == "full base" || subConnection == "joined" || awakeStyle == "single icon",
+                                    selected = subConnection == "separate",
+                                    onClick = { settings.toolbarSubConnection = "separate" },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                                ) {
+                                    Text("Separate")
+                                }
+                                SegmentedButton(
+                                    selected = subConnection == "joined",
+                                    onClick = { settings.toolbarSubConnection = "joined" },
+                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                                ) {
+                                    Text("Joined")
+                                }
+                            }
+                        }
+                    }
+
+                    // Sub Alignment
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("Sub Alignment", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+
+                        // Full Base vs Base Icon - Hidden when Joined or Single Icon
+                        if (subConnection != "joined" && awakeStyle != "single icon") {
+                            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                                SegmentedButton(
+                                    selected = subAlign == "full base",
                                     onClick = { settings.toolbarSubAlign = "full base" },
-                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                                    enabled = subConnection != "joined" && awakeStyle != "single icon"
+                                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
                                 ) {
                                     Text("Full Base")
                                 }
                                 SegmentedButton(
-                                    selected = subAlign == "base icon" && subConnection != "joined" && awakeStyle != "single icon",
+                                    selected = subAlign == "base icon",
                                     onClick = { settings.toolbarSubAlign = "base icon" },
-                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                                    enabled = subConnection != "joined" && awakeStyle != "single icon"
+                                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
                                 ) {
                                     Text("Base Icon")
                                 }
                             }
+                        }
 
-                            // Sub Align Modifiers (Top/Middle/Bottom or Start/Center/End)
-                            if (subAlign == "full base" || subConnection == "joined" || awakeStyle == "single icon") {
-                                val modLabels = if (baseLayout == "horiz") listOf("start", "middle", "end") else listOf("top", "middle", "bottom")
-                                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                                    listOf("top", "middle", "bottom").forEachIndexed { idx, mod ->
-                                        SegmentedButton(
-                                            selected = subAlignModifier == mod,
-                                            onClick = { settings.toolbarSubAlignModifier = mod },
-                                            shape = SegmentedButtonDefaults.itemShape(index = idx, count = 3)
-                                        ) {
-                                            Text(modLabels[idx].replaceFirstChar { it.uppercase() })
-                                        }
-                                    }
+                        // Sub Align Modifiers (Top/Middle/Bottom for horizontal cross-axis, Start/Middle/End for vertical cross-axis) - Always accessible!
+                        val isVerticalExpansion = subDirection in listOf("up", "down")
+                        val modLabels = if (isVerticalExpansion) listOf("start", "middle", "end") else listOf("top", "middle", "bottom")
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                            listOf("top", "middle", "bottom").forEachIndexed { idx, mod ->
+                                SegmentedButton(
+                                    selected = subAlignModifier == mod,
+                                    onClick = { settings.toolbarSubAlignModifier = mod },
+                                    shape = SegmentedButtonDefaults.itemShape(index = idx, count = 3)
+                                ) {
+                                    Text(modLabels[idx].replaceFirstChar { it.uppercase() })
                                 }
                             }
                         }
@@ -555,7 +535,7 @@ fun CustomisationScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -676,10 +656,7 @@ fun CustomisationScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Lock Dormant Indicator", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                        Text("Disables drag gestures when dormant.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("Lock Dormant Indicator", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Switch(checked = dormantLocked, onCheckedChange = { settings.toolbarDormantLocked = it })
                 }
             }
@@ -696,7 +673,7 @@ fun CustomisationScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -761,10 +738,10 @@ fun CustomisationScreen(
                                 .clip(CircleShape)
                                 .background(Color(customSeedColor))
                                 .border(if (colorRole == "custom") 2.5.dp else 1.dp, if (colorRole == "custom") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                                .clickable {
-                                    settings.toolbarColorRole = "custom"
-                                    showColorDialog = true
-                                },
+                            .clickable {
+                                settings.toolbarColorRole = "custom"
+                                showColorDialog = true
+                            },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(if (colorRole == "custom") Icons.Default.Check else Icons.Default.Palette, null, Modifier.size(20.dp), tint = Color.White)

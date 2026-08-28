@@ -144,6 +144,11 @@ class OverlayManager private constructor(private val context: Context) {
         val windowXFlow = MutableStateFlow(initialX)
         val windowYFlow = MutableStateFlow(initialY)
 
+        var baseAnchorX = initialX
+        var baseAnchorY = initialY
+        var currentBaseOffsetX = 0
+        var currentBaseOffsetY = 0
+
         toolbarLifecycle = OverlayLifecycleOwner()
         toolbarView = ComposeView(context).apply {
             clipChildren = false
@@ -165,28 +170,57 @@ class OverlayManager private constructor(private val context: Context) {
                         windowPosY = currentY,
                         screenWidth = screenWidth,
                         screenHeight = screenHeight,
+                        onBaseOffsetChanged = { offsetX, offsetY ->
+                            currentBaseOffsetX = offsetX
+                            currentBaseOffsetY = offsetY
+                            toolbarParams?.let { params ->
+                                val newX = baseAnchorX - currentBaseOffsetX
+                                val newY = baseAnchorY - currentBaseOffsetY
+                                if (params.x != newX || params.y != newY) {
+                                    params.x = newX
+                                    params.y = newY
+                                    try {
+                                        windowManager.updateViewLayout(this@apply, params)
+                                    } catch (e: Exception) {}
+                                }
+                            }
+                        },
                         onExpandToggle = {
                             val newExpanded = !_isExpanded.value
                             _isExpanded.value = newExpanded
-                            if (!newExpanded && settings.toolbarDormantPositionMode == "defined") {
-                                toolbarParams?.let { params ->
-                                    params.x = settings.toolbarDormantPosX
-                                    params.y = settings.toolbarDormantPosY
-                                    windowXFlow.value = params.x
-                                    windowYFlow.value = params.y
-                                    windowManager.updateViewLayout(this@apply, params)
+                            if (!newExpanded) {
+                                currentBaseOffsetX = 0
+                                currentBaseOffsetY = 0
+                                if (settings.toolbarDormantPositionMode == "defined") {
+                                    baseAnchorX = settings.toolbarDormantPosX
+                                    baseAnchorY = settings.toolbarDormantPosY
+                                    toolbarParams?.let { params ->
+                                        params.x = baseAnchorX
+                                        params.y = baseAnchorY
+                                        windowXFlow.value = params.x
+                                        windowYFlow.value = params.y
+                                        try {
+                                            windowManager.updateViewLayout(this@apply, params)
+                                        } catch (e: Exception) {}
+                                    }
                                 }
                             }
                         },
                         onCollapse = {
                             _isExpanded.value = false
+                            currentBaseOffsetX = 0
+                            currentBaseOffsetY = 0
                             if (settings.toolbarDormantPositionMode == "defined") {
+                                baseAnchorX = settings.toolbarDormantPosX
+                                baseAnchorY = settings.toolbarDormantPosY
                                 toolbarParams?.let { params ->
-                                    params.x = settings.toolbarDormantPosX
-                                    params.y = settings.toolbarDormantPosY
+                                    params.x = baseAnchorX
+                                    params.y = baseAnchorY
                                     windowXFlow.value = params.x
                                     windowYFlow.value = params.y
-                                    windowManager.updateViewLayout(this@apply, params)
+                                    try {
+                                        windowManager.updateViewLayout(this@apply, params)
+                                    } catch (e: Exception) {}
                                 }
                             }
                         },
@@ -203,33 +237,33 @@ class OverlayManager private constructor(private val context: Context) {
                                 val awakePosition = settings.toolbarAwakePosition
                                 if (_isExpanded.value && awakePosition == "always docked") {
                                     // 1D track along nearest edge
-                                    val distLeft = params.x
-                                    val distRight = maxX - params.x
-                                    val distTop = params.y
-                                    val distBottom = maxY - params.y
+                                    val distLeft = baseAnchorX
+                                    val distRight = maxX - baseAnchorX
+                                    val distTop = baseAnchorY
+                                    val distBottom = maxY - baseAnchorY
                                     val minDist = minOf(distLeft, distRight, distTop, distBottom)
 
                                     if (minDist == distLeft || minDist == distRight) {
                                         // Track along Y
-                                        params.y = (params.y + dy.toInt()).coerceIn(0, maxY)
+                                        baseAnchorY = (baseAnchorY + dy.toInt()).coerceIn(0, maxY)
                                         // Dragging towards adjacent edge sleeps
-                                        if (params.y <= 10 || params.y >= maxY - 10) {
+                                        if (baseAnchorY <= 10 || baseAnchorY >= maxY - 10) {
                                             if (settings.toolbarSleepGesture == "drag to edge") {
                                                 _isExpanded.value = false
                                             }
                                         }
                                     } else {
                                         // Track along X
-                                        params.x = (params.x + dx.toInt()).coerceIn(0, maxX)
-                                        if (params.x <= 10 || params.x >= maxX - 10) {
+                                        baseAnchorX = (baseAnchorX + dx.toInt()).coerceIn(0, maxX)
+                                        if (baseAnchorX <= 10 || baseAnchorX >= maxX - 10) {
                                             if (settings.toolbarSleepGesture == "drag to edge") {
                                                 _isExpanded.value = false
                                             }
                                         }
                                     }
                                 } else {
-                                    var newX = (params.x + dx.toInt()).coerceIn(0, maxX)
-                                    var newY = (params.y + dy.toInt()).coerceIn(0, maxY)
+                                    var newX = (baseAnchorX + dx.toInt()).coerceIn(0, maxX)
+                                    var newY = (baseAnchorY + dy.toInt()).coerceIn(0, maxY)
 
                                     // Dockable snap
                                     if (_isExpanded.value && awakePosition == "dockable") {
@@ -250,13 +284,24 @@ class OverlayManager private constructor(private val context: Context) {
                                         }
                                     }
 
-                                    params.x = newX
-                                    params.y = newY
+                                    baseAnchorX = newX
+                                    baseAnchorY = newY
                                 }
 
-                                windowXFlow.value = params.x
-                                windowYFlow.value = params.y
-                                windowManager.updateViewLayout(this@apply, params)
+                                params.x = baseAnchorX - currentBaseOffsetX
+                                params.y = baseAnchorY - currentBaseOffsetY
+                                try {
+                                    windowManager.updateViewLayout(this@apply, params)
+                                } catch (e: Exception) {}
+
+                                val isRightHalf = baseAnchorX >= (screenWidth / 2)
+                                val isBottomHalf = baseAnchorY >= (screenHeight / 2)
+                                val prevRightHalf = windowXFlow.value >= (screenWidth / 2)
+                                val prevBottomHalf = windowYFlow.value >= (screenHeight / 2)
+                                if (isRightHalf != prevRightHalf || isBottomHalf != prevBottomHalf) {
+                                    windowXFlow.value = baseAnchorX
+                                    windowYFlow.value = baseAnchorY
+                                }
                             }
                         },
                         onInputSelected = { inputType ->
