@@ -20,6 +20,7 @@ class ProcessTextActivity : ComponentActivity() {
                 // Open bottom sheet allowing the user to add extra context or send
                 overlayManager.openInputBottomSheet(
                     inputType = "text",
+                    showInputTypeTabs = true,
                     prefilledText = selectedText
                 )
             } else {

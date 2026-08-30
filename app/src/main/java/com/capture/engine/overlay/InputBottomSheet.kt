@@ -65,6 +65,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
@@ -94,6 +95,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -107,6 +109,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -115,16 +118,29 @@ import java.io.File
 import java.io.FileInputStream
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.math.sin
 
 @Composable
 fun InputBottomSheet(
     initialTab: String,
+    showInputTypeTabs: Boolean = true,
+    hasActiveSelection: Boolean = false,
     prefilledText: String? = null,
+    sharedText: String? = null,
+    sharedTitle: String? = null,
     attachmentBase64: String? = null,
     attachmentMime: String? = null,
     onDismiss: () -> Unit,
-    onSend: (type: String, textContent: String?, audioBase64: String?, attBase64: String?, attMime: String?) -> Unit
+    onSend: (
+        type: String,
+        textContent: String?,
+        audioBase64: String?,
+        attBase64: String?,
+        attMime: String?,
+        sharedText: String?,
+        sharedTitle: String?
+    ) -> Unit
 ) {
     val context = LocalContext.current
     val settings = remember { CaptureApplication.instance.settingsRepository }
@@ -139,12 +155,16 @@ fun InputBottomSheet(
     }
 
     LaunchedEffect(initialTab) {
-        settings.lastUsedInputType = initialTab
+        if (initialTab != "camera") {
+            settings.lastUsedInputType = initialTab
+        }
     }
 
     var isFullscreen by remember { mutableStateOf(false) }
-    var activeAttachment by remember { mutableStateOf(attachmentBase64) }
-    var activeAttachmentMime by remember { mutableStateOf(attachmentMime) }
+    var activeSharedText by remember(sharedText) { mutableStateOf(sharedText) }
+    var activeSharedTitle by remember(sharedTitle) { mutableStateOf(sharedTitle) }
+    var activeAttachment by remember(attachmentBase64) { mutableStateOf(attachmentBase64) }
+    var activeAttachmentMime by remember(attachmentMime) { mutableStateOf(attachmentMime) }
 
     // Text state
     val textFocusRequester = remember { FocusRequester() }
@@ -546,7 +566,7 @@ fun InputBottomSheet(
         )
     }
 
-    val scrimAlpha = (0.45f * (1f - (sheetTranslationY.value / screenHeightPx))).coerceIn(0f, 0.45f)
+    val scrimAlpha = if (hasActiveSelection) 0f else (0.45f * (1f - (sheetTranslationY.value / screenHeightPx))).coerceIn(0f, 0.45f)
 
     // Scrim / backdrop dismissable area: clicking outside discards and smoothly slides down
     Box(
@@ -580,20 +600,20 @@ fun InputBottomSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 12.dp)
+                    .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp)
             ) {
                 // Drag handle area with vertical drag gestures (swipe up for full screen, swipe down for short/dismiss)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(32.dp)
+                        .height(22.dp)
                         .then(dragGestureModifier),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
                         modifier = Modifier
-                            .width(36.dp)
-                            .height(4.5.dp)
+                            .width(32.dp)
+                            .height(4.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.outlineVariant)
                     )
@@ -602,121 +622,177 @@ fun InputBottomSheet(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // M3 Single-Select Segmented Buttons with proper outlineVariant border
-                val segmentedBorder = SegmentedButtonDefaults.borderStroke(
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                val segmentedColors = SegmentedButtonDefaults.colors(
-                    activeBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    inactiveBorderColor = MaterialTheme.colorScheme.outlineVariant
-                )
+                if (showInputTypeTabs) {
+                    val segmentedBorder = SegmentedButtonDefaults.borderStroke(
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    val segmentedColors = SegmentedButtonDefaults.colors(
+                        activeBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                        inactiveBorderColor = MaterialTheme.colorScheme.outlineVariant
+                    )
 
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    SegmentedButton(
-                        selected = selectedTabIndex == 0,
-                        onClick = {
-                            selectedTabIndex = 0
-                            settings.lastUsedInputType = "speech_to_text"
-                            if (isAudioRecording) stopAudioRecording()
-                            if (!isVoiceListening) startListening()
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
-                        border = segmentedBorder,
-                        colors = segmentedColors,
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.RecordVoiceOver,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        label = { Text("Dictate") }
-                    )
-                    SegmentedButton(
-                        selected = selectedTabIndex == 1,
-                        onClick = {
-                            selectedTabIndex = 1
-                            settings.lastUsedInputType = "mic_audio"
-                            if (isVoiceListening) stopListening()
-                            if (!isAudioRecording) startAudioRecording()
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
-                        border = segmentedBorder,
-                        colors = segmentedColors,
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        label = { Text("Record") }
-                    )
-                    SegmentedButton(
-                        selected = selectedTabIndex == 2,
-                        onClick = {
-                            selectedTabIndex = 2
-                            settings.lastUsedInputType = if (initialTab == "clipboard_paste") "clipboard_paste" else "text_snippet"
-                            stopListening()
-                            stopAudioRecording()
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
-                        border = segmentedBorder,
-                        colors = segmentedColors,
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Default.Keyboard,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        label = { Text("Type") }
-                    )
+                    SingleChoiceSegmentedButtonRow(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        SegmentedButton(
+                            selected = selectedTabIndex == 0,
+                            onClick = {
+                                selectedTabIndex = 0
+                                settings.lastUsedInputType = "speech_to_text"
+                                if (isAudioRecording) stopAudioRecording()
+                                if (!isVoiceListening) startListening()
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
+                            border = segmentedBorder,
+                            colors = segmentedColors,
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.RecordVoiceOver,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            label = { Text("Dictate") }
+                        )
+                        SegmentedButton(
+                            selected = selectedTabIndex == 1,
+                            onClick = {
+                                selectedTabIndex = 1
+                                settings.lastUsedInputType = "mic_audio"
+                                if (isVoiceListening) stopListening()
+                                if (!isAudioRecording) startAudioRecording()
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
+                            border = segmentedBorder,
+                            colors = segmentedColors,
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            label = { Text("Record") }
+                        )
+                        SegmentedButton(
+                            selected = selectedTabIndex == 2,
+                            onClick = {
+                                selectedTabIndex = 2
+                                settings.lastUsedInputType = if (initialTab == "clipboard_paste") "clipboard_paste" else "text_snippet"
+                                stopListening()
+                                stopAudioRecording()
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
+                            border = segmentedBorder,
+                            colors = segmentedColors,
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Default.Keyboard,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            label = { Text("Type") }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Attachment Thumbnail Chip (if shared via Share Sheet)
-                if (activeAttachment != null) {
-                    Row(
+                // Context / Preview Chips (Shared Text and Media Attachment)
+                if (activeSharedText != null || activeAttachment != null) {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            tonalElevation = 2.dp
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        if (activeSharedText != null) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                tonalElevation = 2.dp,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Image,
-                                    contentDescription = "Attachment",
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Attached Media (${activeAttachmentMime ?: "File"})",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Remove Attachment",
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .clickable {
-                                            activeAttachment = null
-                                            activeAttachmentMime = null
-                                        },
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Description,
+                                        contentDescription = "Shared Content",
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        if (!activeSharedTitle.isNullOrBlank()) {
+                                            Text(
+                                                text = activeSharedTitle!!,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Text(
+                                            text = activeSharedText!!.trim().replace(Regex("\\s+"), " "),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            maxLines = if (activeSharedTitle.isNullOrBlank()) 2 else 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove Shared Content",
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .clickable {
+                                                activeSharedText = null
+                                                activeSharedTitle = null
+                                            },
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
+                        }
+
+                        if (activeAttachment != null) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                tonalElevation = 2.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Image,
+                                        contentDescription = "Attachment",
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Attached Media (${activeAttachmentMime ?: "File"})",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Remove Attachment",
+                                        modifier = Modifier
+                                            .size(18.dp)
+                                            .clickable {
+                                                activeAttachment = null
+                                                activeAttachmentMime = null
+                                            },
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
                             }
                         }
                     }
@@ -839,7 +915,7 @@ fun InputBottomSheet(
                                 onClick = {
                                     stopListening()
                                     dismissSheet {
-                                        onSend("speech_to_text", voiceText, null, activeAttachment, activeAttachmentMime)
+                                        onSend("speech_to_text", voiceText.ifBlank { null }, null, activeAttachment, activeAttachmentMime, activeSharedText, activeSharedTitle)
                                     }
                                 },
                                 modifier = Modifier
@@ -986,7 +1062,7 @@ fun InputBottomSheet(
                                         } else null
                                     }
                                     dismissSheet {
-                                        onSend("mic_audio", null, b64, activeAttachment, activeAttachmentMime)
+                                        onSend("mic_audio", null, b64, activeAttachment, activeAttachmentMime, activeSharedText, activeSharedTitle)
                                     }
                                 },
                                 modifier = Modifier
@@ -1052,7 +1128,7 @@ fun InputBottomSheet(
                                 onClick = {
                                     val type = if (initialTab == "clipboard_paste") "clipboard_paste" else "text_snippet"
                                     dismissSheet {
-                                        onSend(type, textInput, null, activeAttachment, activeAttachmentMime)
+                                        onSend(type, textInput.ifBlank { null }, null, activeAttachment, activeAttachmentMime, activeSharedText, activeSharedTitle)
                                     }
                                 },
                                 modifier = Modifier
@@ -1077,42 +1153,36 @@ fun AudioWaveformVisualizer(
     mediaRecorder: MediaRecorder?,
     modifier: Modifier = Modifier
 ) {
+    val currentMediaRecorder by rememberUpdatedState(mediaRecorder)
     val barCount = 28
     val amplitudes = remember {
         mutableStateListOf<Float>().apply {
-            repeat(barCount) { add(0.12f) }
+            repeat(barCount) { add(0.06f) }
         }
     }
-    var phase by remember { mutableFloatStateOf(0f) }
 
-    LaunchedEffect(isRecording) {
+    LaunchedEffect(isRecording, currentMediaRecorder) {
+        if (!isRecording) return@LaunchedEffect
         while (isActive) {
-            if (isRecording) {
-                phase += 0.28f
-                val rawAmp = try {
-                    mediaRecorder?.maxAmplitude ?: 0
-                } catch (e: Exception) {
-                    0
-                }
-                val normalizedAmp = (rawAmp.toFloat() / 20000f).coerceIn(0.08f, 1f)
-
-                if (amplitudes.size >= barCount) {
-                    amplitudes.removeAt(0)
-                }
-
-                // Blend real microphone amplitude with subtle animated harmonics so waveform is vibrant even in emulator
-                val sim = 0.15f + 0.45f * abs(sin(phase.toDouble()).toFloat())
-                val dynamicAmp = maxOf(normalizedAmp, sim)
-                amplitudes.add(dynamicAmp)
-            } else {
-                // Settle smoothly to baseline when paused
-                if (amplitudes.any { it > 0.1f }) {
-                    for (i in amplitudes.indices) {
-                        amplitudes[i] = maxOf(0.08f, amplitudes[i] * 0.82f)
-                    }
-                }
+            val rawAmp = try {
+                currentMediaRecorder?.maxAmplitude ?: 0
+            } catch (e: Exception) {
+                0
             }
-            delay(65L)
+
+            // Logarithmic / power-curve response with noise floor gating
+            val normalizedAmp = if (rawAmp < 150) {
+                0.06f
+            } else {
+                val ratio = ((rawAmp - 150).toFloat() / 26000f).coerceIn(0f, 1f)
+                (0.06f + 0.94f * ratio.pow(0.42f)).coerceIn(0.06f, 1f)
+            }
+
+            if (amplitudes.size >= barCount) {
+                amplitudes.removeAt(0)
+            }
+            amplitudes.add(normalizedAmp)
+            delay(50L)
         }
     }
 

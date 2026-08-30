@@ -155,4 +155,88 @@ class PayloadBuilderTest {
         // Targeted selection is preserved
         assertEquals("10,20,30,40", payload.targetedSelection)
     }
+
+    @Test
+    fun `build isolates share_context from input_content and serializes properly`() {
+        val sources = ActiveContextSources(
+            screenGrab = false,
+            appTree = false,
+            highlightedText = false,
+            media = false
+        )
+
+        val shareContext = com.capture.engine.model.ShareContext(
+            text = "Full article content about quantum computing breakthroughs.",
+            url = "https://example.com/quantum",
+            title = "Quantum Milestone",
+            mimeType = "text/plain"
+        )
+
+        val payload = PayloadBuilder.build(
+            type = "share_target",
+            source = "system_share_sheet",
+            packageName = "com.android.chrome",
+            appName = "Chrome",
+            inputContent = "Summarize the 3 key takeaways",
+            activeContextSources = sources,
+            shareContext = shareContext
+        )
+
+        assertEquals("share_target", payload.type)
+        assertEquals("system_share_sheet", payload.source)
+        assertEquals("Summarize the 3 key takeaways", payload.inputContent)
+        assertNotNull(payload.shareContext)
+        assertEquals("Full article content about quantum computing breakthroughs.", payload.shareContext?.text)
+        assertEquals("https://example.com/quantum", payload.shareContext?.url)
+        assertEquals("Quantum Milestone", payload.shareContext?.title)
+
+        val json = PayloadBuilder.toJson(payload)
+        assertTrue(json.contains("\"share_context\""))
+        assertTrue(json.contains("\"input_content\": \"Summarize the 3 key takeaways\""))
+        assertTrue(json.contains("\"title\": \"Quantum Milestone\""))
+    }
+
+    @Test
+    fun `build auto-extracts url into share_context when url present in text`() {
+        val sources = ActiveContextSources()
+
+        val shareContext = com.capture.engine.model.ShareContext(
+            text = "Interesting read here: https://deepmind.google/research for AI agents",
+            title = "Deepmind Research"
+        )
+
+        val payload = PayloadBuilder.build(
+            type = "text_snippet",
+            source = "floating_overlay",
+            packageName = "com.example.app",
+            activeContextSources = sources,
+            shareContext = shareContext
+        )
+
+        assertNotNull(payload.shareContext)
+        assertEquals("https://deepmind.google/research", payload.shareContext?.url)
+        assertEquals("Deepmind Research", payload.shareContext?.title)
+    }
+
+    @Test
+    fun `build converts blank share_context to null`() {
+        val sources = ActiveContextSources()
+
+        val shareContext = com.capture.engine.model.ShareContext(
+            text = "   ",
+            url = "",
+            title = "  ",
+            mimeType = null
+        )
+
+        val payload = PayloadBuilder.build(
+            type = "text_snippet",
+            source = "floating_overlay",
+            packageName = "com.example.app",
+            activeContextSources = sources,
+            shareContext = shareContext
+        )
+
+        assertNull(payload.shareContext)
+    }
 }

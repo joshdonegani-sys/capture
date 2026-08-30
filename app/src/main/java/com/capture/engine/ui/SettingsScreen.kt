@@ -1,13 +1,16 @@
 package com.capture.engine.ui
 
+import android.Manifest
 import android.app.StatusBarManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.drawable.Icon as AndroidIcon
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.content.ContextCompat
 import com.capture.engine.R
 import com.capture.engine.services.CaptureTileService
 import androidx.compose.foundation.layout.Arrangement
@@ -30,10 +33,12 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Nightlight
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -75,6 +80,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val app = CaptureApplication.instance
     val settings = app.settingsRepository
+    val overlayManager = remember { OverlayManager.getInstance(context) }
     val scope = rememberCoroutineScope()
 
     var webhookUrl by remember { mutableStateOf(settings.webhookUrl) }
@@ -82,6 +88,7 @@ fun SettingsScreen(
     var retryMinutes by remember { mutableStateOf(settings.retryIntervalMinutes.toString()) }
     var isFullTree by remember { mutableStateOf(settings.isFullAppTreeEnabled) }
     var isOverlayEnabled by remember { mutableStateOf(settings.isOverlayEnabled) }
+    val isOverlayAwake by overlayManager.isExpanded.collectAsState()
 
     // Test webhook status state
     var testStatusText by remember { mutableStateOf<String?>(null) }
@@ -94,6 +101,14 @@ fun SettingsScreen(
     val isOverlayPermissionActive = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
         Settings.canDrawOverlays(context)
     } else true
+    val isCameraPermissionActive = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.CAMERA
+    ) == PackageManager.PERMISSION_GRANTED
+    val isAudioPermissionActive = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.RECORD_AUDIO
+    ) == PackageManager.PERMISSION_GRANTED
 
     // Context source states
     val isScreenGrabActive by settings.isScreenGrabActiveFlow.collectAsState()
@@ -162,6 +177,38 @@ fun SettingsScreen(
                     isGranted = isMediaProjectionActive,
                     onClick = {
                         onRequestMediaProjection()
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // Camera Access
+                PermissionItem(
+                    title = "Camera Access",
+                    subtitle = "Capture and annotate photos from the toolbar",
+                    isGranted = isCameraPermissionActive,
+                    onClick = {
+                        val intent = Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                        context.startActivity(intent)
+                    }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // Microphone Access
+                PermissionItem(
+                    title = "Microphone Access",
+                    subtitle = "Voice transcription and audio notes",
+                    isGranted = isAudioPermissionActive,
+                    onClick = {
+                        val intent = Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                        context.startActivity(intent)
                     }
                 )
 
@@ -417,7 +464,78 @@ fun SettingsScreen(
                     )
                 }
 
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // Toolbar Sleep / Wake Status Row & Toggle Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Toolbar Sleep / Wake Status",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = if (!isOverlayEnabled) {
+                                "Overlay is currently disabled"
+                            } else if (isOverlayAwake) {
+                                "Awake — Active HUD tools displayed"
+                            } else {
+                                "Asleep — Dormant indicator mode"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    if (isOverlayAwake) {
+                        FilledTonalButton(
+                            onClick = {
+                                overlayManager.collapseToolbarToDormant()
+                            },
+                            enabled = isOverlayEnabled,
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Nightlight,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Sleep")
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                if (!isOverlayEnabled) {
+                                    isOverlayEnabled = true
+                                    settings.isOverlayEnabled = true
+                                    overlayManager.showToolbar()
+                                    CaptureTileService.requestTileUpdate(context)
+                                }
+                                overlayManager.wakeToolbar()
+                            },
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.WbSunny,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Wake")
+                        }
+                    }
+                }
+
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
                     val statusBarManager = context.getSystemService(StatusBarManager::class.java)
                     OutlinedButton(
                         onClick = {
@@ -432,9 +550,7 @@ fun SettingsScreen(
                                 // Fallback
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.AddCircleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))

@@ -18,6 +18,9 @@ data class CapturePayload(
     @SerializedName("package_name")
     val packageName: String? = null,
 
+    @SerializedName("app_name")
+    val appName: String? = null,
+
     @SerializedName("input_content")
     val inputContent: String? = null,
 
@@ -26,6 +29,9 @@ data class CapturePayload(
 
     @SerializedName("media_context")
     val mediaContext: MediaContext? = null,
+
+    @SerializedName("share_context")
+    val shareContext: ShareContext? = null,
 
     @SerializedName("highlighted_text")
     val highlightedText: String? = null,
@@ -47,6 +53,20 @@ data class CapturePayload(
 
     @SerializedName("attachment_mime")
     val attachmentMime: String? = null
+)
+
+data class ShareContext(
+    @SerializedName("text")
+    val text: String? = null,
+
+    @SerializedName("url")
+    val url: String? = null,
+
+    @SerializedName("title")
+    val title: String? = null,
+
+    @SerializedName("mime_type")
+    val mimeType: String? = null
 )
 
 data class ActiveContextSources(

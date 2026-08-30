@@ -136,11 +136,24 @@ class SettingsRepository(context: Context) {
     private val _lastUsedInputType = MutableStateFlow(prefs.getString(KEY_LAST_USED_INPUT, "speech_to_text") ?: "speech_to_text")
     val lastUsedInputTypeFlow: StateFlow<String> = _lastUsedInputType
 
+    private val _lastUsedModalInputType = MutableStateFlow(prefs.getString(KEY_LAST_USED_MODAL_INPUT, "speech_to_text") ?: "speech_to_text")
+    val lastUsedModalInputTypeFlow: StateFlow<String> = _lastUsedModalInputType
+
+    var lastUsedModalInputType: String
+        get() = _lastUsedModalInputType.value
+        set(value) {
+            _lastUsedModalInputType.value = value
+            prefs.edit().putString(KEY_LAST_USED_MODAL_INPUT, value).apply()
+        }
+
     var lastUsedInputType: String
         get() = _lastUsedInputType.value
         set(value) {
             _lastUsedInputType.value = value
             prefs.edit().putString(KEY_LAST_USED_INPUT, value).apply()
+            if (value in setOf("speech_to_text", "mic_audio", "text_snippet", "clipboard_paste", "text")) {
+                lastUsedModalInputType = value
+            }
         }
 
     // 1. Toolbar Color Role & Custom Seed Color
@@ -175,31 +188,75 @@ class SettingsRepository(context: Context) {
             prefs.edit().putString(KEY_CONTEXT_SOURCES_DISPLAY, value).apply()
         }
 
-    // 3. Visible Input Icons in "All" mode
-    private val defaultInputIcons = setOf("speech_to_text", "mic_audio", "clipboard_paste", "text_snippet")
-    private val _visibleInputIcons = MutableStateFlow(prefs.getStringSet(KEY_VISIBLE_INPUT_ICONS, defaultInputIcons) ?: defaultInputIcons)
-    val visibleInputIconsFlow: StateFlow<Set<String>> = _visibleInputIcons
+    // 3. Visible Icons in "Custom" mode (Ordered list of tools: speech_to_text, mic_audio, clipboard_paste, text_snippet, camera, point_mode, last_used, menu)
+    val availableCustomIcons = listOf("speech_to_text", "mic_audio", "clipboard_paste", "text_snippet", "camera", "point_mode", "last_used", "menu")
+    val defaultCustomIcons = listOf("last_used", "menu")
 
-    var visibleInputIcons: Set<String>
-        get() = _visibleInputIcons.value
+    private val _toolbarCustomIcons = MutableStateFlow<List<String>>(
+        run {
+            val raw = prefs.getString(KEY_TOOLBAR_CUSTOM_ICONS, null)
+            if (!raw.isNullOrBlank()) {
+                val list = raw.split(",").map { it.trim() }.filter { it in availableCustomIcons }
+                if (list.isNotEmpty()) list else defaultCustomIcons
+            } else {
+                val savedSet = prefs.getStringSet(KEY_VISIBLE_INPUT_ICONS, null)
+                if (savedSet != null && savedSet.isNotEmpty()) {
+                    val list = availableCustomIcons.filter { it in savedSet }
+                    if (list.isNotEmpty()) list else defaultCustomIcons
+                } else {
+                    defaultCustomIcons
+                }
+            }
+        }
+    )
+    val toolbarCustomIconsFlow: StateFlow<List<String>> = _toolbarCustomIcons
+
+    var toolbarCustomIcons: List<String>
+        get() = _toolbarCustomIcons.value
         set(value) {
-            _visibleInputIcons.value = value
-            prefs.edit().putStringSet(KEY_VISIBLE_INPUT_ICONS, value).apply()
+            val sanitized = value.filter { it in availableCustomIcons }
+            val finalVal = if (sanitized.isNotEmpty()) sanitized else defaultCustomIcons
+            _toolbarCustomIcons.value = finalVal
+            prefs.edit().putString(KEY_TOOLBAR_CUSTOM_ICONS, finalVal.joinToString(",")).apply()
         }
 
-    fun toggleInputIconVisibility(iconKey: String) {
-        val current = _visibleInputIcons.value.toMutableSet()
+    fun toggleCustomIcon(iconKey: String) {
+        val current = _toolbarCustomIcons.value.toMutableList()
         if (current.contains(iconKey)) {
-            // Prevent removing the last remaining icon
             if (current.size > 1) {
                 current.remove(iconKey)
-                visibleInputIcons = current
+                toolbarCustomIcons = current
             }
         } else {
             current.add(iconKey)
-            visibleInputIcons = current
+            toolbarCustomIcons = current
         }
     }
+
+    fun moveCustomIcon(iconKey: String, up: Boolean) {
+        val current = _toolbarCustomIcons.value.toMutableList()
+        val index = current.indexOf(iconKey)
+        if (index == -1) return
+        if (up && index > 0) {
+            val item = current.removeAt(index)
+            current.add(index - 1, item)
+            toolbarCustomIcons = current
+        } else if (!up && index in 0 until (current.size - 1)) {
+            val item = current.removeAt(index)
+            current.add(index + 1, item)
+            toolbarCustomIcons = current
+        }
+    }
+
+    // Backward compatibility for visibleInputIcons
+    val visibleInputIconsFlow: StateFlow<Set<String>> = MutableStateFlow(setOf("speech_to_text", "mic_audio", "clipboard_paste", "text_snippet", "camera"))
+    var visibleInputIcons: Set<String>
+        get() = _toolbarCustomIcons.value.toSet()
+        set(value) {
+            toolbarCustomIcons = value.toList()
+        }
+
+    fun toggleInputIconVisibility(iconKey: String) = toggleCustomIcon(iconKey)
 
     // --- Toolbar Layout Engine Core Settings ---
 
@@ -234,21 +291,6 @@ class SettingsRepository(context: Context) {
         set(value) {
             _toolbarSubDirection.value = value
             prefs.edit().putString(KEY_TOOLBAR_SUB_DIRECTION, value).apply()
-        }
-
-    // Sub Connection: "separate" or "joined"
-    private val _toolbarSubConnection = MutableStateFlow(
-        if (prefs.getString(KEY_TOOLBAR_AWAKE_STYLE, "double icon") == "single icon") "joined"
-        else (prefs.getString(KEY_TOOLBAR_SUB_CONNECTION, "separate") ?: "separate")
-    )
-    val toolbarSubConnectionFlow: StateFlow<String> = _toolbarSubConnection
-
-    var toolbarSubConnection: String
-        get() = if (_toolbarAwakeStyle.value == "single icon") "joined" else _toolbarSubConnection.value
-        set(value) {
-            val effectiveValue = if (_toolbarAwakeStyle.value == "single icon") "joined" else value
-            _toolbarSubConnection.value = effectiveValue
-            prefs.edit().putString(KEY_TOOLBAR_SUB_CONNECTION, effectiveValue).apply()
         }
 
     // Sub Align: "full base" or "base icon"
@@ -326,18 +368,21 @@ class SettingsRepository(context: Context) {
         set(value) = prefs.edit().putInt(KEY_TOOLBAR_DORMANT_POS_Y, value).apply()
 
     // Awake State Config
-    // Awake Style: "double icon", "single icon", "all icons"
-    private val _toolbarAwakeStyle = MutableStateFlow(prefs.getString(KEY_TOOLBAR_AWAKE_STYLE, "double icon") ?: "double icon")
+    // Awake Style: "all icons", "custom"
+    private val _toolbarAwakeStyle = MutableStateFlow(
+        when (prefs.getString(KEY_TOOLBAR_AWAKE_STYLE, "custom")) {
+            "all icons" -> "all icons"
+            else -> "custom"
+        }
+    )
     val toolbarAwakeStyleFlow: StateFlow<String> = _toolbarAwakeStyle
 
     var toolbarAwakeStyle: String
         get() = _toolbarAwakeStyle.value
         set(value) {
-            _toolbarAwakeStyle.value = value
-            prefs.edit().putString(KEY_TOOLBAR_AWAKE_STYLE, value).apply()
-            if (value == "single icon") {
-                toolbarSubConnection = "joined"
-            }
+            val effective = if (value == "all icons") "all icons" else "custom"
+            _toolbarAwakeStyle.value = effective
+            prefs.edit().putString(KEY_TOOLBAR_AWAKE_STYLE, effective).apply()
         }
 
     private val _toolbarAwakeLocked = MutableStateFlow(prefs.getBoolean(KEY_TOOLBAR_AWAKE_LOCKED, false))
@@ -394,6 +439,17 @@ class SettingsRepository(context: Context) {
             prefs.edit().putString(KEY_TOOLBAR_SLEEP_GESTURE, value).apply()
         }
 
+    // Sleep After timeout in minutes (default 1 minute)
+    private val _toolbarSleepAfterMinutes = MutableStateFlow(prefs.getInt(KEY_TOOLBAR_SLEEP_AFTER, 1))
+    val toolbarSleepAfterMinutesFlow: StateFlow<Int> = _toolbarSleepAfterMinutes
+
+    var toolbarSleepAfterMinutes: Int
+        get() = _toolbarSleepAfterMinutes.value
+        set(value) {
+            _toolbarSleepAfterMinutes.value = value
+            prefs.edit().putInt(KEY_TOOLBAR_SLEEP_AFTER, value).apply()
+        }
+
     companion object {
         private const val KEY_WEBHOOK_URL = "webhook_url"
         private const val KEY_API_KEY = "api_key"
@@ -412,17 +468,18 @@ class SettingsRepository(context: Context) {
         private const val KEY_TOOLBAR_SHADOW_ELEVATION = "toolbar_shadow_elevation"
         private const val KEY_INPUT_SELECTION_MODE = "input_selection_mode"
         private const val KEY_LAST_USED_INPUT = "last_used_input"
+        private const val KEY_LAST_USED_MODAL_INPUT = "last_used_modal_input"
 
         private const val KEY_TOOLBAR_COLOR_ROLE = "toolbar_color_role"
         private const val KEY_TOOLBAR_CUSTOM_SEED = "toolbar_custom_seed"
         private const val KEY_CONTEXT_SOURCES_DISPLAY = "context_sources_display"
         private const val KEY_VISIBLE_INPUT_ICONS = "visible_input_icons"
+        private const val KEY_TOOLBAR_CUSTOM_ICONS = "toolbar_custom_icons"
 
         // Toolbar UI Layout Keys
         private const val KEY_TOOLBAR_BASE_LAYOUT = "toolbar_base_layout"
         private const val KEY_TOOLBAR_SUB_LAYOUT = "toolbar_sub_layout"
         private const val KEY_TOOLBAR_SUB_DIRECTION = "toolbar_sub_direction"
-        private const val KEY_TOOLBAR_SUB_CONNECTION = "toolbar_sub_connection"
         private const val KEY_TOOLBAR_SUB_ALIGN = "toolbar_sub_align"
         private const val KEY_TOOLBAR_SUB_ALIGN_MODIFIER = "toolbar_sub_align_modifier"
         private const val KEY_TOOLBAR_STAY_ON_SCREEN = "toolbar_stay_on_screen"
@@ -440,5 +497,6 @@ class SettingsRepository(context: Context) {
 
         private const val KEY_TOOLBAR_WAKE_GESTURE = "toolbar_wake_gesture"
         private const val KEY_TOOLBAR_SLEEP_GESTURE = "toolbar_sleep_gesture"
+        private const val KEY_TOOLBAR_SLEEP_AFTER = "toolbar_sleep_after_minutes"
     }
 }

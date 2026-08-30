@@ -27,7 +27,7 @@ class WebhookWorker(
         for (capture in pendingErrors) {
             val result = client.sendPayload(
                 url = settings.webhookUrl,
-                jsonPayload = capture.rawJson,
+                jsonPayload = capture.getRawJson(applicationContext),
                 apiKey = settings.apiKey.ifBlank { null }
             )
 

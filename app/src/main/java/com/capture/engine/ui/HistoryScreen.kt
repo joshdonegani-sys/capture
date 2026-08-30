@@ -5,8 +5,10 @@ import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -17,14 +19,12 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,29 +47,37 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.automirrored.filled.ShortText
+import androidx.compose.material.icons.filled.AppShortcut
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.CropFree
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FormatQuote
-import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Screenshot
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -79,12 +87,15 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -101,10 +112,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import kotlinx.coroutines.delay
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.FileProvider
 import com.capture.engine.CaptureApplication
 import com.capture.engine.model.CaptureEntity
 import com.capture.engine.model.CapturePayload
@@ -119,11 +132,57 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+fun shareJsonFile(context: Context, filename: String, jsonContent: String) {
+    try {
+        val shareDir = File(context.cacheDir, "shared_captures")
+        if (!shareDir.exists()) {
+            shareDir.mkdirs()
+        }
+        val file = File(shareDir, filename)
+        file.writeText(jsonContent, Charsets.UTF_8)
+
+        val uri: Uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(sendIntent, "Share Capture JSON"))
+    } catch (e: Exception) {
+        Log.e("HistoryScreen", "Error sharing JSON file", e)
+        Toast.makeText(context, "Error sharing file: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun getAppName(context: Context, packageName: String?): String? {
+    if (packageName.isNullOrBlank()) return null
+    return try {
+        val pm = context.packageManager
+        val appInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.getApplicationInfo(packageName, PackageManager.ApplicationInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.getApplicationInfo(packageName, 0)
+        }
+        pm.getApplicationLabel(appInfo).toString()
+    } catch (e: Exception) {
+        null
+    }
+}
+
 sealed class HistoryTab(val title: String, val icon: ImageVector) {
     data object Overview : HistoryTab("Overview", Icons.Default.Info)
+    data object Input : HistoryTab("Input", Icons.Default.Keyboard)
+    data object SharedContent : HistoryTab("Shared", Icons.Default.Description)
+    data object Attachment : HistoryTab("Attachment", Icons.Default.AttachFile)
     data object Screenshot : HistoryTab("Screenshot", Icons.Default.Screenshot)
-    data object AppTree : HistoryTab("App Tree", Icons.Default.AccountTree)
-    data object Media : HistoryTab("Media & Audio", Icons.Default.PlayCircle)
+    data object AppTree : HistoryTab("App Tree", Icons.Default.AppShortcut)
+    data object Media : HistoryTab("Media", Icons.Default.PlayCircle)
     data object RawJson : HistoryTab("Raw JSON", Icons.Default.Code)
 }
 
@@ -142,6 +201,8 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
     var selectedTypeFilter by remember { mutableStateOf<String?>(null) }
     var filterScreenGrabOnly by remember { mutableStateOf(false) }
     var filterAppTreeOnly by remember { mutableStateOf(false) }
+    var filterAttachmentOnly by remember { mutableStateOf(false) }
+    var filterShareOnly by remember { mutableStateOf(false) }
 
     // BottomSheet inspection state for full-screen view
     var inspectingCaptureItem by remember { mutableStateOf<CaptureEntity?>(null) }
@@ -150,7 +211,9 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
     val filteredCaptures = captures.filter { capture ->
         (selectedTypeFilter == null || capture.type == selectedTypeFilter) &&
                 (!filterScreenGrabOnly || capture.hasScreenGrab) &&
-                (!filterAppTreeOnly || capture.hasAppTree)
+                (!filterAppTreeOnly || capture.hasAppTree) &&
+                (!filterAttachmentOnly || capture.hasAttachment) &&
+                (!filterShareOnly || capture.hasShareContext)
     }
 
     Column(
@@ -168,11 +231,13 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             FilterChip(
-                selected = selectedTypeFilter == null && !filterScreenGrabOnly && !filterAppTreeOnly,
+                selected = selectedTypeFilter == null && !filterScreenGrabOnly && !filterAppTreeOnly && !filterAttachmentOnly && !filterShareOnly,
                 onClick = {
                     selectedTypeFilter = null
                     filterScreenGrabOnly = false
                     filterAppTreeOnly = false
+                    filterAttachmentOnly = false
+                    filterShareOnly = false
                 },
                 label = { Text("All") }
             )
@@ -197,6 +262,11 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                 label = { Text("Paste") }
             )
             FilterChip(
+                selected = filterShareOnly,
+                onClick = { filterShareOnly = !filterShareOnly },
+                label = { Text("Shared") }
+            )
+            FilterChip(
                 selected = filterScreenGrabOnly,
                 onClick = { filterScreenGrabOnly = !filterScreenGrabOnly },
                 label = { Text("With Screenshot") }
@@ -205,6 +275,11 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                 selected = filterAppTreeOnly,
                 onClick = { filterAppTreeOnly = !filterAppTreeOnly },
                 label = { Text("With App Tree") }
+            )
+            FilterChip(
+                selected = filterAttachmentOnly,
+                onClick = { filterAttachmentOnly = !filterAttachmentOnly },
+                label = { Text("With Attachment") }
             )
         }
 
@@ -238,7 +313,7 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                                 dao.update(item.copy(status = DeliveryStatus.SENDING))
                                 val result = client.sendPayload(
                                     url = settings.webhookUrl,
-                                    jsonPayload = item.rawJson,
+                                    jsonPayload = item.getRawJson(context),
                                     apiKey = settings.apiKey.ifBlank { null }
                                 )
                                 dao.update(
@@ -251,6 +326,16 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                                     )
                                 )
                             }
+                        },
+                        onDelete = {
+                            scope.launch(Dispatchers.IO) {
+                                try {
+                                    val file = File(item.payloadFilePath)
+                                    if (file.exists()) file.delete()
+                                } catch (e: Exception) {}
+                                dao.deleteById(item.id)
+                            }
+                            Toast.makeText(context, "Capture deleted", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -278,7 +363,7 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                                 dao.update(currentItem.copy(status = DeliveryStatus.SENDING))
                                 val result = client.sendPayload(
                                     url = settings.webhookUrl,
-                                    jsonPayload = currentItem.rawJson,
+                                    jsonPayload = currentItem.getRawJson(context),
                                     apiKey = settings.apiKey.ifBlank { null }
                                 )
                                 dao.update(
@@ -299,150 +384,116 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CaptureItemCard(
     item: CaptureEntity,
     onOpenFullscreen: () -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    onDelete: () -> Unit
 ) {
-    var isExpanded by remember { mutableStateOf(false) }
-    val dateFormat = remember { SimpleDateFormat("HH:mm:ss · dd MMM", Locale.getDefault()) }
-    val formattedDate = remember(item.timestamp) { dateFormat.format(Date(item.timestamp)) }
+    val context = LocalContext.current
+    var showContextMenu by remember { mutableStateOf(false) }
+    val fileDateFormat = remember { SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()) }
+    val dateTimeFormat = remember { SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()) }
+    val formattedDateTime = remember(item.timestamp) { dateTimeFormat.format(Date(item.timestamp)) }
+    val resolvedAppName = item.appName ?: remember(item.packageName) { getAppName(context, item.packageName) }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .animateContentSize(animationSpec = tween(250)),
+            .clip(RoundedCornerShape(16.dp))
+            .combinedClickable(
+                onClick = onOpenFullscreen,
+                onLongClick = { showContextMenu = true }
+            ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer
         )
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Header Row (Clickable to expand/collapse)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                    .clickable { isExpanded = !isExpanded }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    // Status Icon & Badge
-                    when (item.status) {
-                        DeliveryStatus.SUCCESS -> {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Success",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "Sent (${item.responseCode ?: 200})",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        DeliveryStatus.ERROR -> {
-                            Icon(
-                                imageVector = Icons.Default.Error,
-                                contentDescription = "Error",
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "Error (${item.responseCode ?: "Failed"})",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                        DeliveryStatus.SENDING -> {
-                            Icon(
-                                imageVector = Icons.Default.HourglassEmpty,
-                                contentDescription = "Sending",
-                                tint = MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "Sending...",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.tertiary
-                            )
-                        }
-                    }
-
-                    if (item.responseTimeMs != null) {
-                        Text(
-                            text = "· ${item.responseTimeMs}ms",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = formattedDate,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    IconButton(
-                        onClick = { isExpanded = !isExpanded },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = if (isExpanded) "Collapse" else "Expand",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // Summary Content preview (always visible or truncated when collapsed)
+        Box(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { isExpanded = !isExpanded }
-                    .padding(horizontal = 16.dp)
+                    .padding(16.dp)
             ) {
+                // Header Row: Status Icon, App Title directly after icon, and formatted date + time (e.g. 28 Aug, HH:MM)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        when (item.status) {
+                            DeliveryStatus.SUCCESS -> {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Success",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            DeliveryStatus.ERROR -> {
+                                Icon(
+                                    imageVector = Icons.Default.Error,
+                                    contentDescription = "Error",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            DeliveryStatus.SENDING -> {
+                                Icon(
+                                    imageVector = Icons.Default.HourglassEmpty,
+                                    contentDescription = "Sending",
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        val displayAppName = resolvedAppName ?: item.packageName
+                        if (!displayAppName.isNullOrBlank()) {
+                            Text(
+                                text = displayAppName,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = formattedDateTime,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Primary Input preview
                 if (!item.inputPreview.isNullOrBlank()) {
                     Text(
                         text = item.inputPreview,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
-                        maxLines = if (isExpanded) 4 else 2,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                 }
 
-                if (!item.packageName.isNullOrBlank()) {
-                    Text(
-                        text = "App: ${item.packageName}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // Summary chips (context icons)
+                // Summary chips (context icons matching floating toolbar) & Retry action
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp, bottom = if (isExpanded) 8.dp else 14.dp),
+                        .padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -450,17 +501,23 @@ fun CaptureItemCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (item.hasShareContext) {
+                            ContextIndicatorChip(icon = Icons.Default.Description, label = "Shared")
+                        }
                         if (item.hasScreenGrab) {
                             ContextIndicatorChip(icon = Icons.Default.Screenshot, label = "Screenshot")
                         }
                         if (item.hasAppTree) {
-                            ContextIndicatorChip(icon = Icons.Default.CropFree, label = "App Tree")
+                            ContextIndicatorChip(icon = Icons.Default.AppShortcut, label = "App Tree")
                         }
                         if (item.hasHighlightedText) {
-                            ContextIndicatorChip(icon = Icons.Default.TextFields, label = "Highlighted")
+                            ContextIndicatorChip(icon = Icons.AutoMirrored.Filled.ShortText, label = "Highlighted")
                         }
                         if (item.hasMedia) {
                             ContextIndicatorChip(icon = Icons.Default.PlayCircle, label = "Media")
+                        }
+                        if (item.hasAttachment) {
+                            ContextIndicatorChip(icon = Icons.Default.AttachFile, label = "Attachment")
                         }
                     }
 
@@ -482,22 +539,53 @@ fun CaptureItemCard(
                 }
             }
 
-            // Expanded Tabbed View
-            AnimatedVisibility(
-                visible = isExpanded,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
+            // Long Press Context Menu
+            DropdownMenu(
+                expanded = showContextMenu,
+                onDismissRequest = { showContextMenu = false }
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    CaptureDetailContent(
-                        item = item,
-                        onRetry = onRetry,
-                        onOpenFullscreen = onOpenFullscreen,
-                        isEmbeddedInCard = true
-                    )
-                }
+                DropdownMenuItem(
+                    text = { Text("Download") },
+                    leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
+                    onClick = {
+                        showContextMenu = false
+                        val filename = "capture_${fileDateFormat.format(Date(item.timestamp))}.json"
+                        val success = saveJsonToDownloads(context, filename, item.getRawJson(context))
+                        if (success) {
+                            Toast.makeText(context, "Saved to Downloads: $filename", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Copy") },
+                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                    onClick = {
+                        showContextMenu = false
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        val clip = ClipData.newPlainText("Capture Payload JSON", item.getRawJson(context))
+                        clipboard?.setPrimaryClip(clip)
+                        Toast.makeText(context, "JSON copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Share") },
+                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                    onClick = {
+                        showContextMenu = false
+                        val filename = "capture_${fileDateFormat.format(Date(item.timestamp))}.json"
+                        shareJsonFile(context, filename, item.getRawJson(context))
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        showContextMenu = false
+                        onDelete()
+                    }
+                )
             }
         }
     }
@@ -533,15 +621,15 @@ private fun ContextIndicatorChip(icon: ImageVector, label: String) {
 @Composable
 fun CaptureDetailContent(
     item: CaptureEntity,
-    onRetry: () -> Unit,
-    onOpenFullscreen: (() -> Unit)? = null,
-    isEmbeddedInCard: Boolean = false
+    onRetry: () -> Unit
 ) {
+    val context = LocalContext.current
     var selectedTabIndex by remember { mutableIntStateOf(0) }
 
-    val payload = remember(item.rawJson) {
+    val payload = remember(item.payloadFilePath) {
         try {
-            Gson().fromJson(item.rawJson, CapturePayload::class.java)
+            val json = item.getRawJson(context)
+            Gson().fromJson(json, CapturePayload::class.java)
         } catch (e: Exception) {
             null
         }
@@ -550,16 +638,25 @@ fun CaptureDetailContent(
     val availableTabs = remember(item, payload) {
         buildList {
             add(HistoryTab.Overview)
+            if (!payload?.inputContent.isNullOrBlank() || !item.inputPreview.isNullOrBlank() || !payload?.audioBase64.isNullOrBlank()) {
+                add(HistoryTab.Input)
+            }
+            if (item.hasShareContext || payload?.shareContext != null) {
+                add(HistoryTab.SharedContent)
+            }
+            if (!payload?.attachmentBase64.isNullOrBlank()) {
+                add(HistoryTab.Attachment)
+            }
             if (item.hasScreenGrab || !payload?.screenshotBase64.isNullOrBlank()) {
                 add(HistoryTab.Screenshot)
             }
             if (item.hasAppTree || !payload?.appTreeText.isNullOrBlank() || !payload?.highlightedText.isNullOrBlank()) {
                 add(HistoryTab.AppTree)
             }
-            if (item.hasMedia || payload?.mediaContext != null || !payload?.audioBase64.isNullOrBlank()) {
+            if (item.hasMedia || payload?.mediaContext != null) {
                 add(HistoryTab.Media)
             }
-            add(HistoryTab.RawJson) // Final tab
+            add(HistoryTab.RawJson)
         }
     }
 
@@ -567,39 +664,20 @@ fun CaptureDetailContent(
 
     Column(modifier = Modifier.fillMaxWidth()) {
         // Tab Row Header
-        Row(
+        ScrollableTabRow(
+            selectedTabIndex = currentTabIndex,
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            edgePadding = 12.dp,
+            containerColor = Color.Transparent,
+            divider = {}
         ) {
-            ScrollableTabRow(
-                selectedTabIndex = currentTabIndex,
-                modifier = Modifier.weight(1f),
-                edgePadding = 12.dp,
-                containerColor = Color.Transparent,
-                divider = {}
-            ) {
-                availableTabs.forEachIndexed { index, tab ->
-                    Tab(
-                        selected = currentTabIndex == index,
-                        onClick = { selectedTabIndex = index },
-                        text = { Text(tab.title, maxLines = 1) },
-                        icon = { Icon(tab.icon, contentDescription = tab.title, modifier = Modifier.size(18.dp)) }
-                    )
-                }
-            }
-
-            if (onOpenFullscreen != null && isEmbeddedInCard) {
-                IconButton(
-                    onClick = onOpenFullscreen,
-                    modifier = Modifier.padding(end = 8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Fullscreen,
-                        contentDescription = "Expand Fullscreen",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            availableTabs.forEachIndexed { index, tab ->
+                Tab(
+                    selected = currentTabIndex == index,
+                    onClick = { selectedTabIndex = index },
+                    text = { Text(tab.title, maxLines = 1) },
+                    icon = { Icon(tab.icon, contentDescription = tab.title, modifier = Modifier.size(18.dp)) }
+                )
             }
         }
 
@@ -613,6 +691,9 @@ fun CaptureDetailContent(
         ) {
             when (availableTabs.getOrNull(currentTabIndex)) {
                 is HistoryTab.Overview -> CaptureOverviewTab(item = item, payload = payload, onRetry = onRetry)
+                is HistoryTab.Input -> CaptureInputTab(item = item, payload = payload)
+                is HistoryTab.SharedContent -> CaptureSharedContentTab(payload = payload)
+                is HistoryTab.Attachment -> CaptureAttachmentTab(item = item, payload = payload)
                 is HistoryTab.Screenshot -> CaptureScreenshotTab(payload = payload)
                 is HistoryTab.AppTree -> CaptureAppTreeTab(payload = payload)
                 is HistoryTab.Media -> CaptureMediaTab(payload = payload)
@@ -712,51 +793,6 @@ fun CaptureOverviewTab(
             }
         }
 
-        // Primary Input Content Section
-        val inputContent = payload?.inputContent ?: item.inputPreview
-        if (!inputContent.isNullOrBlank()) {
-            OutlinedCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.outlinedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
-                )
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Input / Transcription",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-
-                        TextButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                val clip = ClipData.newPlainText("Input Content", inputContent)
-                                clipboard?.setPrimaryClip(clip)
-                                Toast.makeText(context, "Input copied to clipboard", Toast.LENGTH_SHORT).show()
-                            }
-                        ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Copy", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-
-                    Text(
-                        text = inputContent,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-            }
-        }
-
         // Metadata Grid Section
         OutlinedCard(
             modifier = Modifier.fillMaxWidth(),
@@ -772,16 +808,25 @@ fun CaptureOverviewTab(
                     fontWeight = FontWeight.SemiBold
                 )
 
+                val fullDateFormat = remember { SimpleDateFormat("EEEE, d MMMM yyyy · HH:mm:ss", Locale.getDefault()) }
+                val formattedFullDate = remember(item.timestamp) { fullDateFormat.format(Date(item.timestamp)) }
+                MetaRow(label = "Timestamp", value = formattedFullDate)
                 MetaRow(label = "Capture Type", value = item.type)
                 MetaRow(label = "Source", value = item.source)
+                val resolvedAppName = payload?.appName ?: item.appName ?: remember(item.packageName) { getAppName(context, item.packageName) }
+                if (!resolvedAppName.isNullOrBlank()) {
+                    MetaRow(label = "Target App", value = resolvedAppName)
+                }
                 MetaRow(label = "Target Package", value = item.packageName ?: "None (System / Overlay)")
 
                 // Active context tags
                 val activeContexts = buildList {
+                    if (item.hasShareContext || payload?.shareContext != null) add("Shared Content")
                     if (item.hasScreenGrab) add("Screenshot")
                     if (item.hasAppTree) add("App Tree")
                     if (item.hasHighlightedText) add("Highlighted Text")
                     if (item.hasMedia) add("Media")
+                    if (!payload?.attachmentBase64.isNullOrBlank()) add("Attachment (${payload?.attachmentMime ?: "file"})")
                 }
                 if (activeContexts.isNotEmpty()) {
                     Row(
@@ -820,6 +865,247 @@ fun CaptureOverviewTab(
 }
 
 @Composable
+fun CaptureInputTab(
+    item: CaptureEntity,
+    payload: CapturePayload?
+) {
+    val context = LocalContext.current
+    val inputContent = payload?.inputContent ?: item.inputPreview
+    val audioBase64 = payload?.audioBase64
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // 1. Text / Transcription Card
+        if (!inputContent.isNullOrBlank()) {
+            OutlinedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Text / Transcription",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                val clip = ClipData.newPlainText("Input Content", inputContent)
+                                clipboard?.setPrimaryClip(clip)
+                                Toast.makeText(context, "Input copied to clipboard", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Copy", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    Text(
+                        text = inputContent,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        }
+
+        // 2. Playable Recorded Audio Card
+        if (!audioBase64.isNullOrBlank()) {
+            AudioPlayerCard(audioBase64 = audioBase64, captureId = item.id)
+        }
+
+        if (inputContent.isNullOrBlank() && audioBase64.isNullOrBlank()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(100.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No input text or recorded audio for this capture.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AudioPlayerCard(
+    audioBase64: String,
+    captureId: Long
+) {
+    val context = LocalContext.current
+    val tempAudioFile = remember(audioBase64, captureId) {
+        try {
+            val clean = if (audioBase64.contains(",")) audioBase64.substringAfter(",") else audioBase64
+            val decoded = Base64.decode(clean, Base64.DEFAULT)
+            val file = java.io.File(context.cacheDir, "play_audio_${captureId}.m4a")
+            file.writeBytes(decoded)
+            file
+        } catch (e: Exception) {
+            Log.e("HistoryScreen", "Error saving temp audio file", e)
+            null
+        }
+    }
+
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var currentPosMs by remember { mutableIntStateOf(0) }
+    var totalDurationMs by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(tempAudioFile) {
+        if (tempAudioFile != null && tempAudioFile.exists()) {
+            try {
+                val mp = MediaPlayer().apply {
+                    setDataSource(tempAudioFile.absolutePath)
+                    prepare()
+                    setOnCompletionListener {
+                        isPlaying = false
+                        currentPosMs = 0
+                    }
+                }
+                mediaPlayer = mp
+                totalDurationMs = mp.duration.coerceAtLeast(0)
+            } catch (e: Exception) {
+                Log.e("HistoryScreen", "Error initializing MediaPlayer", e)
+            }
+        }
+        onDispose {
+            try {
+                mediaPlayer?.stop()
+                mediaPlayer?.release()
+            } catch (e: Exception) {
+                // Ignore
+            }
+            mediaPlayer = null
+        }
+    }
+
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            mediaPlayer?.let { mp ->
+                if (mp.isPlaying) {
+                    currentPosMs = mp.currentPosition
+                }
+            }
+            delay(100L)
+        }
+    }
+
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Audiotrack,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "Recorded Mic Audio Note",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            // Audio Player Controls Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                FilledTonalIconButton(
+                    onClick = {
+                        mediaPlayer?.let { mp ->
+                            if (mp.isPlaying) {
+                                mp.pause()
+                                isPlaying = false
+                            } else {
+                                mp.start()
+                                isPlaying = true
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(42.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                // Progress slider & time display
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Slider(
+                        value = if (totalDurationMs > 0) currentPosMs.toFloat() else 0f,
+                        onValueChange = { newPos ->
+                            currentPosMs = newPos.toInt()
+                            mediaPlayer?.seekTo(currentPosMs)
+                        },
+                        valueRange = 0f..(totalDurationMs.toFloat().coerceAtLeast(1f)),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = formatMs(currentPosMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = formatMs(totalDurationMs),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun formatMs(ms: Int): String {
+    val totalSec = ms / 1000
+    val min = totalSec / 60
+    val sec = totalSec % 60
+    return String.format(Locale.getDefault(), "%02d:%02d", min, sec)
+}
+
+@Composable
 private fun MetaRow(label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -836,6 +1122,574 @@ private fun MetaRow(label: String, value: String) {
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium
         )
+    }
+}
+
+@Composable
+fun CaptureSharedContentTab(payload: CapturePayload?) {
+    val context = LocalContext.current
+    val shareContext = payload?.shareContext
+
+    if (shareContext == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(100.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "No shared content for this capture.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        OutlinedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.outlinedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+            )
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Description,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Shared Content Envelope",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    if (!shareContext.text.isNullOrBlank()) {
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                val clip = ClipData.newPlainText("Shared Text", shareContext.text)
+                                clipboard?.setPrimaryClip(clip)
+                                Toast.makeText(context, "Shared text copied to clipboard", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Copy Text", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+
+                if (!shareContext.title.isNullOrBlank()) {
+                    MetaRow(label = "Title / Subject", value = shareContext.title!!)
+                }
+
+                if (!shareContext.url.isNullOrBlank()) {
+                    MetaRow(label = "Extracted URL", value = shareContext.url!!)
+                }
+
+                if (!shareContext.mimeType.isNullOrBlank()) {
+                    MetaRow(label = "MIME Type", value = shareContext.mimeType!!)
+                }
+
+                if (!shareContext.text.isNullOrBlank()) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                    Text(
+                        text = "Shared Text Body",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = shareContext.text!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CaptureAttachmentTab(
+    item: CaptureEntity,
+    payload: CapturePayload?
+) {
+    val context = LocalContext.current
+    val base64Str = payload?.attachmentBase64
+    val mimeType = payload?.attachmentMime ?: "application/octet-stream"
+
+    val attachmentBytes = remember(base64Str) {
+        if (base64Str.isNullOrBlank()) null
+        else {
+            try {
+                val clean = if (base64Str.contains(",")) base64Str.substringAfter(",") else base64Str
+                Base64.decode(clean.trim(), Base64.DEFAULT)
+            } catch (e: Exception) {
+                Log.e("HistoryScreen", "Failed to decode attachment base64", e)
+                null
+            }
+        }
+    }
+
+    if (attachmentBytes == null || base64Str.isNullOrBlank()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "No attachment data available for this capture.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
+    }
+
+    val isImage = mimeType.startsWith("image/", ignoreCase = true)
+    val isAudio = mimeType.startsWith("audio/", ignoreCase = true) || mimeType.contains("m4a", ignoreCase = true)
+    val isText = mimeType.startsWith("text/", ignoreCase = true) || mimeType.contains("json", ignoreCase = true)
+    val ext = getExtensionForMime(mimeType)
+    val formattedSize = remember(attachmentBytes.size) {
+        val bytes = attachmentBytes.size
+        when {
+            bytes < 1024 -> "$bytes B"
+            bytes < 1024 * 1024 -> "${String.format(Locale.getDefault(), "%.1f", bytes / 1024f)} KB"
+            else -> "${String.format(Locale.getDefault(), "%.2f", bytes / (1024f * 1024f))} MB"
+        }
+    }
+
+    val fileDateFormat = remember { SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()) }
+    val defaultFilename = "attachment_${item.id}_${fileDateFormat.format(Date(item.timestamp))}.$ext"
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Attachment Info Card
+        OutlinedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.outlinedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+            )
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val headerIcon = when {
+                            isImage -> Icons.Default.Image
+                            isAudio -> Icons.Default.Audiotrack
+                            mimeType.contains("pdf") -> Icons.Default.Description
+                            else -> Icons.Default.AttachFile
+                        }
+                        Icon(
+                            imageVector = headerIcon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Attachment (${ext.uppercase()})",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = formattedSize,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+
+                Text(
+                    text = "MIME: $mimeType",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // 1. IMAGE PREVIEW
+        if (isImage) {
+            val decodedBitmap = remember(attachmentBytes) {
+                try {
+                    BitmapFactory.decodeByteArray(attachmentBytes, 0, attachmentBytes.size)
+                } catch (e: Exception) {
+                    Log.e("HistoryScreen", "Error decoding attachment bitmap", e)
+                    null
+                }
+            }
+
+            if (decodedBitmap != null) {
+                val imageBitmap = remember(decodedBitmap) { decodedBitmap.asImageBitmap() }
+                var showFullPreviewDialog by remember { mutableStateOf(false) }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Resolution: ${decodedBitmap.width} × ${decodedBitmap.height} px",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        IconButton(
+                            onClick = {
+                                val success = saveBitmapToPictures(context, decodedBitmap, defaultFilename)
+                                if (success) {
+                                    Toast.makeText(context, "Saved to Pictures: $defaultFilename", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "Failed to save image", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = "Download", modifier = Modifier.size(20.dp))
+                        }
+                        IconButton(
+                            onClick = {
+                                shareAttachmentFile(context, defaultFilename, mimeType, attachmentBytes)
+                            }
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                        .background(Color.Black)
+                        .clickable { showFullPreviewDialog = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        bitmap = imageBitmap,
+                        contentDescription = "Attachment Image Preview",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                Text(
+                    text = "Tap image to view full scale",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (showFullPreviewDialog) {
+                    Dialog(onDismissRequest = { showFullPreviewDialog = false }) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 600.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Image(
+                                    bitmap = imageBitmap,
+                                    contentDescription = "Full Attachment Preview",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                TextButton(
+                                    onClick = { showFullPreviewDialog = false },
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Text("Close")
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text(
+                    text = "Unable to render image preview from raw bytes.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+        // 2. AUDIO PLAYER
+        else if (isAudio) {
+            AudioPlayerCard(
+                audioBase64 = base64Str,
+                captureId = item.id
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        val success = saveBytesToDownloads(context, defaultFilename, mimeType, attachmentBytes)
+                        if (success) {
+                            Toast.makeText(context, "Saved to Downloads: $defaultFilename", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "Failed to save audio", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Download Audio")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        shareAttachmentFile(context, defaultFilename, mimeType, attachmentBytes)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Share Audio")
+                }
+            }
+        }
+        // 3. TEXT PREVIEW
+        else if (isText) {
+            val textContent = remember(attachmentBytes) {
+                try {
+                    String(attachmentBytes, Charsets.UTF_8)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+
+            if (!textContent.isNullOrBlank()) {
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.outlinedCardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Text Preview",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            TextButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                    clipboard?.setPrimaryClip(ClipData.newPlainText("Attachment Text", textContent))
+                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Copy", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+
+                        Text(
+                            text = textContent.take(5000) + if (textContent.length > 5000) "\n\n[... Truncated ...]" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 240.dp)
+                                .verticalScroll(rememberScrollState())
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        val success = saveBytesToDownloads(context, defaultFilename, mimeType, attachmentBytes)
+                        if (success) {
+                            Toast.makeText(context, "Saved to Downloads: $defaultFilename", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Download File")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        shareAttachmentFile(context, defaultFilename, mimeType, attachmentBytes)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Share / Open")
+                }
+            }
+        }
+        // 4. OTHER BINARY / DOCUMENT
+        else {
+            OutlinedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Description,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = defaultFilename,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "$formattedSize · $mimeType",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        val success = saveBytesToDownloads(context, defaultFilename, mimeType, attachmentBytes)
+                        if (success) {
+                            Toast.makeText(context, "Saved to Downloads: $defaultFilename", Toast.LENGTH_LONG).show()
+                        } else {
+                            Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Download File")
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        shareAttachmentFile(context, defaultFilename, mimeType, attachmentBytes)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Share / Open")
+                }
+            }
+        }
+
+        // Action: Copy Base64 String
+        OutlinedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.outlinedCardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Raw Base64 Encoded Data",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "${base64Str.length} characters",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                TextButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("Attachment Base64", base64Str))
+                        Toast.makeText(context, "Base64 copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Copy", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
     }
 }
 
@@ -1116,7 +1970,6 @@ fun CaptureAppTreeTab(payload: CapturePayload?) {
 fun CaptureMediaTab(payload: CapturePayload?) {
     val context = LocalContext.current
     val mediaContext: MediaContext? = payload?.mediaContext
-    val audioBase64: String? = payload?.audioBase64
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1221,43 +2074,7 @@ fun CaptureMediaTab(payload: CapturePayload?) {
                     }
                 }
             }
-        }
-
-        // Voice / Audio Note Section
-        if (!audioBase64.isNullOrBlank()) {
-            OutlinedCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.outlinedCardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
-                )
-            ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Audiotrack,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "Recorded Mic Audio Note",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    Text(
-                        text = "Base64 Audio payload attached (${(audioBase64.length * 3 / 4) / 1024} KB)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        } else if (mediaContext == null) {
+        } else {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1265,7 +2082,7 @@ fun CaptureMediaTab(payload: CapturePayload?) {
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "No media metadata or audio recorded in this capture.",
+                    text = "No media metadata recorded in this capture.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1278,6 +2095,7 @@ fun CaptureMediaTab(payload: CapturePayload?) {
 fun CaptureRawJsonTab(item: CaptureEntity) {
     val context = LocalContext.current
     val fileDateFormat = remember { SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()) }
+    val rawJson = remember(item.payloadFilePath) { item.getRawJson(context) }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1292,7 +2110,7 @@ fun CaptureRawJsonTab(item: CaptureEntity) {
             TextButton(
                 onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    val clip = ClipData.newPlainText("Capture Payload JSON", item.rawJson)
+                    val clip = ClipData.newPlainText("Capture Payload JSON", rawJson)
                     clipboard?.setPrimaryClip(clip)
                     Toast.makeText(context, "JSON copied to clipboard", Toast.LENGTH_SHORT).show()
                 }
@@ -1305,7 +2123,7 @@ fun CaptureRawJsonTab(item: CaptureEntity) {
             TextButton(
                 onClick = {
                     val filename = "capture_${fileDateFormat.format(Date(item.timestamp))}.json"
-                    val success = saveJsonToDownloads(context, filename, item.rawJson)
+                    val success = saveJsonToDownloads(context, filename, rawJson)
                     if (success) {
                         Toast.makeText(context, "Saved: $filename", Toast.LENGTH_LONG).show()
                     } else {
@@ -1320,12 +2138,8 @@ fun CaptureRawJsonTab(item: CaptureEntity) {
 
             TextButton(
                 onClick = {
-                    val sendIntent = Intent().apply {
-                        action = Intent.ACTION_SEND
-                        putExtra(Intent.EXTRA_TEXT, item.rawJson)
-                        type = "application/json"
-                    }
-                    context.startActivity(Intent.createChooser(sendIntent, "Share Capture JSON"))
+                    val filename = "capture_${fileDateFormat.format(Date(item.timestamp))}.json"
+                    shareJsonFile(context, filename, rawJson)
                 }
             ) {
                 Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -1348,7 +2162,7 @@ fun CaptureRawJsonTab(item: CaptureEntity) {
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    text = item.rawJson,
+                    text = rawJson,
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace
                 )
@@ -1456,3 +2270,119 @@ private fun saveJsonToDownloads(context: Context, filename: String, jsonContent:
         }
     }
 }
+
+private fun saveBytesToDownloads(context: Context, filename: String, mimeType: String, bytes: ByteArray): Boolean {
+    return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.write(bytes)
+                }
+                true
+            } else {
+                val fallbackFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), filename)
+                fallbackFile.writeBytes(bytes)
+                true
+            }
+        } else {
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            if (!downloadsDir.exists()) {
+                downloadsDir.mkdirs()
+            }
+            val file = File(downloadsDir, filename)
+            file.writeBytes(bytes)
+            true
+        }
+    } catch (e: Exception) {
+        Log.e("HistoryScreen", "Error saving bytes to Downloads", e)
+        try {
+            val fallbackFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), filename)
+            fallbackFile.writeBytes(bytes)
+            true
+        } catch (e2: Exception) {
+            Log.e("HistoryScreen", "Fallback file write failed", e2)
+            false
+        }
+    }
+}
+
+private fun shareAttachmentFile(context: Context, filename: String, mimeType: String, bytes: ByteArray) {
+    try {
+        val shareDir = File(context.cacheDir, "shared_attachments")
+        if (!shareDir.exists()) {
+            shareDir.mkdirs()
+        }
+        val file = File(shareDir, filename)
+        file.writeBytes(bytes)
+
+        val uri: Uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(sendIntent, "Share attachment"))
+    } catch (e: Exception) {
+        Log.e("HistoryScreen", "Failed to share attachment", e)
+        Toast.makeText(context, "Failed to share attachment: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun hasAttachment(rawJson: String?): Boolean {
+    if (rawJson.isNullOrBlank()) return false
+    val index = rawJson.indexOf("\"attachment_base64\"")
+    if (index == -1) return false
+    val colonIndex = rawJson.indexOf(':', index)
+    if (colonIndex == -1) return false
+    val rest = rawJson.substring(colonIndex + 1).trimStart()
+    if (rest.startsWith("null")) return false
+    if (rest.startsWith("\"\"")) return false
+    return rest.startsWith("\"")
+}
+
+private fun getExtensionForMime(mimeType: String?): String {
+    if (mimeType == null) return "bin"
+    return when {
+        mimeType.contains("jpeg") || mimeType.contains("jpg") -> "jpg"
+        mimeType.contains("png") -> "png"
+        mimeType.contains("webp") -> "webp"
+        mimeType.contains("gif") -> "gif"
+        mimeType.contains("svg") -> "svg"
+        mimeType.contains("mp4") || mimeType.contains("m4a") -> "m4a"
+        mimeType.contains("mp3") || mimeType.contains("mpeg") -> "mp3"
+        mimeType.contains("wav") -> "wav"
+        mimeType.contains("ogg") -> "ogg"
+        mimeType.contains("aac") -> "aac"
+        mimeType.contains("pdf") -> "pdf"
+        mimeType.contains("json") -> "json"
+        mimeType.contains("html") -> "html"
+        mimeType.contains("plain") || mimeType.contains("text") -> "txt"
+        mimeType.contains("zip") -> "zip"
+        mimeType.contains("csv") -> "csv"
+        else -> "bin"
+    }
+}
+
+private fun hasShareContext(rawJson: String?): Boolean {
+    if (rawJson.isNullOrBlank()) return false
+    val index = rawJson.indexOf("\"share_context\"")
+    if (index == -1) return false
+    val colonIndex = rawJson.indexOf(':', index)
+    if (colonIndex == -1) return false
+    val rest = rawJson.substring(colonIndex + 1).trimStart()
+    if (rest.startsWith("null")) return false
+    return rest.startsWith("{")
+}
+

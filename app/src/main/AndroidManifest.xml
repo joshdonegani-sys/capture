@@ -9,8 +9,9 @@
     <!-- Overlays -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
-    <!-- Audio / Voice -->
+    <!-- Audio / Voice / Camera -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!-- Foreground Services -->
@@ -21,10 +22,18 @@
     <!-- Boot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- Package Visibility for System Speech Recognition Service -->
+    <!-- Package Visibility -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- Package Visibility for System Speech Recognition Service and Camera -->
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
     </queries>
 
@@ -86,6 +95,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Camera Annotate Activity -->
+        <activity
+            android:name=".ui.CameraAnnotateActivity"
+            android:exported="false"
+            android:label="Annotate Photo"
+            android:theme="@style/Theme.CaptureEngine" />
+
         <!-- Accessibility Service -->
         <service
             android:name=".services.CaptureAccessibilityService"
@@ -143,6 +159,17 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!-- FileProvider for Sharing Files -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 

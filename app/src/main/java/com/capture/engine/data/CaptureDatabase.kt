@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.capture.engine.model.CaptureEntity
 
-@Database(entities = [CaptureEntity::class], version = 1, exportSchema = false)
+@Database(entities = [CaptureEntity::class], version = 4, exportSchema = false)
 abstract class CaptureDatabase : RoomDatabase() {
 
     abstract fun captureDao(): CaptureDao
