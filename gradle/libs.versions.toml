@@ -11,6 +11,8 @@ okhttp = "4.12.0"
 gson = "2.11.0"
 materialIcons = "1.7.8"
 ksp = "2.1.0-1.0.29"
+carApp = "1.7.0"
+media = "1.7.0"
 junit = "4.13.2"
 androidxJunit = "1.2.1"
 espressoCore = "3.6.1"
@@ -40,6 +42,12 @@ androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx"
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+
+# Android for Cars
+androidx-car-app = { group = "androidx.car.app", name = "app", version.ref = "carApp" }
+androidx-car-app-projected = { group = "androidx.car.app", name = "app-projected", version.ref = "carApp" }
+androidx-car-app-testing = { group = "androidx.car.app", name = "app-testing", version.ref = "carApp" }
+androidx-media = { group = "androidx.media", name = "media", version.ref = "media" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }

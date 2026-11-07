@@ -75,10 +75,17 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.gson)
 
+    // Android for Cars (Android Auto)
+    implementation(libs.androidx.car.app)
+    implementation(libs.androidx.car.app.projected)
+    implementation(libs.androidx.media)
+
     // Testing
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.car.app.testing)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.car.app.testing)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     debugImplementation(libs.androidx.ui.tooling)
 }

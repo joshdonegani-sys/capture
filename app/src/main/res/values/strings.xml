@@ -8,4 +8,13 @@
     <string name="screen_capture_notification_text">Capture Engine screen capture is active.</string>
     <string name="process_text_title">Send to Capture Engine</string>
     <string name="qs_tile_label">Capture HUD</string>
+    <string name="car_app_name">Capture Voice Note</string>
+    <string name="car_record_button">Record</string>
+    <string name="car_stop_button">Stop &amp; Save</string>
+    <string name="car_ready_title">Capture Voice Note</string>
+    <string name="car_ready_desc">Tap Record to capture a hands-free voice note while driving.</string>
+    <string name="car_recording_title">Recording…</string>
+    <string name="car_recording_desc">Listening to car microphone. Tap Stop when finished.</string>
+    <string name="car_saved_title">Note Saved!</string>
+    <string name="car_saved_desc">Audio note captured and queued for sync.</string>
 </resources>

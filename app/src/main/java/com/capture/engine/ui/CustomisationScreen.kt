@@ -46,7 +46,7 @@ import androidx.compose.material.icons.filled.Nightlight
 import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.PhotoSizeSelectLarge
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Screenshot
@@ -68,6 +68,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -95,6 +96,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.capture.engine.CaptureApplication
+import com.capture.engine.overlay.DormantPlacementContent
 import com.capture.engine.overlay.ExpandedTarget
 import com.capture.engine.overlay.OverlayManager
 import com.capture.engine.overlay.ToolbarLayoutEngine
@@ -149,6 +151,7 @@ fun CustomisationScreen(
     val sleepAfterMinutes by settings.toolbarSleepAfterMinutesFlow.collectAsState()
 
     var showColorDialog by remember { mutableStateOf(false) }
+    var showDormantPlacementOverlay by remember { mutableStateOf(false) }
     var previewExpandedTarget by remember { mutableStateOf(ExpandedTarget.JOINED_BOTH) }
 
     // Preserved for future use; currently hidden per user request
@@ -269,21 +272,15 @@ fun CustomisationScreen(
                         )
                         TextButton(
                             onClick = {
-                                previewExpandedTarget = when (previewExpandedTarget) {
-                                    ExpandedTarget.NONE -> ExpandedTarget.JOINED_BOTH
-                                    ExpandedTarget.JOINED_BOTH -> ExpandedTarget.INPUT_ONLY
-                                    ExpandedTarget.INPUT_ONLY -> ExpandedTarget.CONTEXT_ONLY
-                                    ExpandedTarget.CONTEXT_ONLY -> ExpandedTarget.NONE
+                                previewExpandedTarget = if (previewExpandedTarget == ExpandedTarget.NONE) {
+                                    ExpandedTarget.JOINED_BOTH
+                                } else {
+                                    ExpandedTarget.NONE
                                 }
                             }
                         ) {
                             Text(
-                                text = when (previewExpandedTarget) {
-                                    ExpandedTarget.NONE -> "Collapsed"
-                                    ExpandedTarget.JOINED_BOTH -> "Joined Expanded"
-                                    ExpandedTarget.INPUT_ONLY -> "Input Expanded"
-                                    ExpandedTarget.CONTEXT_ONLY -> "Context Expanded"
-                                },
+                                text = if (previewExpandedTarget == ExpandedTarget.NONE) "Collapsed" else "Expanded",
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
@@ -305,7 +302,7 @@ fun CustomisationScreen(
                             subDirection = subDirection,
                             subAlign = subAlign,
                             subAlignModifier = subAlignModifier,
-                            expandedTarget = if (awakeStyle == "all icons") ExpandedTarget.JOINED_BOTH else previewExpandedTarget,
+                            expandedTarget = if (awakeStyle == "all icons") ExpandedTarget.NONE else previewExpandedTarget,
                             awakeStyle = awakeStyle,
                             customIcons = customIcons,
                             allIconsOrder = allIconsOrder,
@@ -411,6 +408,15 @@ fun CustomisationScreen(
                             Text("Always Docked")
                         }
                     }
+                    Text(
+                        text = when (awakePosition) {
+                            "free" -> "Free: Moves anywhere, no edge docking."
+                            "always docked" -> "Always Docked: Always snapped to an edge; dragging moves along edge or docks across to another edge."
+                            else -> "Dockable: Moves anywhere freely. Snaps to edge within distance, undocks when dragged away."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
                 // Awake Locked switch
@@ -645,7 +651,10 @@ fun CustomisationScreen(
                         listOf("down", "up", "left", "right").forEachIndexed { idx, dir ->
                             SegmentedButton(
                                 selected = subDirection == dir,
-                                onClick = { settings.toolbarSubDirection = dir },
+                                onClick = {
+                                    settings.toolbarSubDirection = dir
+                                    previewExpandedTarget = ExpandedTarget.JOINED_BOTH
+                                },
                                 shape = SegmentedButtonDefaults.itemShape(index = idx, count = 4)
                             ) {
                                 Text(dir.replaceFirstChar { it.uppercase() })
@@ -660,14 +669,20 @@ fun CustomisationScreen(
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         SegmentedButton(
                             selected = subLayout == "flow axis",
-                            onClick = { settings.toolbarSubLayout = "flow axis" },
+                            onClick = {
+                                settings.toolbarSubLayout = "flow axis"
+                                previewExpandedTarget = ExpandedTarget.JOINED_BOTH
+                            },
                             shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
                         ) {
                             Text("Parallel")
                         }
                         SegmentedButton(
                             selected = subLayout == "cross axis",
-                            onClick = { settings.toolbarSubLayout = "cross axis" },
+                            onClick = {
+                                settings.toolbarSubLayout = "cross axis"
+                                previewExpandedTarget = ExpandedTarget.JOINED_BOTH
+                            },
                             shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
                         ) {
                             Text("Perpendicular")
@@ -686,14 +701,20 @@ fun CustomisationScreen(
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         SegmentedButton(
                             selected = subAlign == "full base",
-                            onClick = { settings.toolbarSubAlign = "full base" },
+                            onClick = {
+                                settings.toolbarSubAlign = "full base"
+                                previewExpandedTarget = ExpandedTarget.JOINED_BOTH
+                            },
                             shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
                         ) {
                             Text("Full Base")
                         }
                         SegmentedButton(
                             selected = subAlign == "base icon",
-                            onClick = { settings.toolbarSubAlign = "base icon" },
+                            onClick = {
+                                settings.toolbarSubAlign = "base icon"
+                                previewExpandedTarget = ExpandedTarget.JOINED_BOTH
+                            },
                             shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
                         ) {
                             Text("Base Icon")
@@ -702,12 +723,21 @@ fun CustomisationScreen(
 
                     // Sub Align Modifiers (Top/Middle/Bottom for horizontal cross-axis, Start/Middle/End for vertical cross-axis) - Always accessible!
                     val isVerticalExpansion = subDirection in listOf("up", "down")
+                    val modValues = if (isVerticalExpansion) listOf("start", "middle", "end") else listOf("top", "middle", "bottom")
                     val modLabels = if (isVerticalExpansion) listOf("start", "middle", "end") else listOf("top", "middle", "bottom")
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                        listOf("top", "middle", "bottom").forEachIndexed { idx, mod ->
+                        modValues.forEachIndexed { idx, mod ->
+                            val isSelected = when (mod) {
+                                "start", "top" -> subAlignModifier in listOf("start", "top", "left")
+                                "end", "bottom" -> subAlignModifier in listOf("end", "bottom", "right")
+                                else -> subAlignModifier in listOf("middle", "center")
+                            }
                             SegmentedButton(
-                                selected = subAlignModifier == mod,
-                                onClick = { settings.toolbarSubAlignModifier = mod },
+                                selected = isSelected,
+                                onClick = {
+                                    settings.toolbarSubAlignModifier = mod
+                                    previewExpandedTarget = ExpandedTarget.JOINED_BOTH
+                                },
                                 shape = SegmentedButtonDefaults.itemShape(index = idx, count = 3)
                             ) {
                                 Text(modLabels[idx].replaceFirstChar { it.uppercase() })
@@ -827,10 +857,32 @@ fun CustomisationScreen(
                         }
                         SegmentedButton(
                             selected = dormantPositionMode == "defined",
-                            onClick = { settings.toolbarDormantPositionMode = "defined" },
+                            onClick = {
+                                if (overlayManager.canDrawOverlays()) {
+                                    overlayManager.launchDormantPlacementOverlay()
+                                } else {
+                                    showDormantPlacementOverlay = true
+                                }
+                            },
                             shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
                         ) {
                             Text("Defined Spot")
+                        }
+                    }
+                    if (dormantPositionMode == "defined") {
+                        OutlinedButton(
+                            onClick = {
+                                if (overlayManager.canDrawOverlays()) {
+                                    overlayManager.launchDormantPlacementOverlay()
+                                } else {
+                                    showDormantPlacementOverlay = true
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Reposition Defined Spot")
                         }
                     }
                 }
@@ -1069,6 +1121,31 @@ fun CustomisationScreen(
                 showColorDialog = false
             }
         )
+    }
+
+    if (showDormantPlacementOverlay) {
+        DisposableEffect(Unit) {
+            overlayManager.setToolbarVisible(false)
+            onDispose {
+                overlayManager.setToolbarVisible(true)
+            }
+        }
+        Box(modifier = Modifier.fillMaxSize()) {
+            DormantPlacementContent(
+                initialX = settings.toolbarDormantPosX,
+                initialY = settings.toolbarDormantPosY,
+                onConfirm = { x, y ->
+                    settings.toolbarDormantPosX = x
+                    settings.toolbarDormantPosY = y
+                    settings.toolbarDormantPositionMode = "defined"
+                    overlayManager.updateDormantPosition(x, y)
+                    showDormantPlacementOverlay = false
+                },
+                onCancel = {
+                    showDormantPlacementOverlay = false
+                }
+            )
+        }
     }
 }
 

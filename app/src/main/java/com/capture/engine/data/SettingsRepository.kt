@@ -359,13 +359,25 @@ class SettingsRepository(context: Context) {
             prefs.edit().putString(KEY_TOOLBAR_DORMANT_POS_MODE, value).apply()
         }
 
+    private val _toolbarDormantPosX = MutableStateFlow(prefs.getInt(KEY_TOOLBAR_DORMANT_POS_X, 16))
+    val toolbarDormantPosXFlow: StateFlow<Int> = _toolbarDormantPosX
+
     var toolbarDormantPosX: Int
-        get() = prefs.getInt(KEY_TOOLBAR_DORMANT_POS_X, 16)
-        set(value) = prefs.edit().putInt(KEY_TOOLBAR_DORMANT_POS_X, value).apply()
+        get() = _toolbarDormantPosX.value
+        set(value) {
+            _toolbarDormantPosX.value = value
+            prefs.edit().putInt(KEY_TOOLBAR_DORMANT_POS_X, value).apply()
+        }
+
+    private val _toolbarDormantPosY = MutableStateFlow(prefs.getInt(KEY_TOOLBAR_DORMANT_POS_Y, 500))
+    val toolbarDormantPosYFlow: StateFlow<Int> = _toolbarDormantPosY
 
     var toolbarDormantPosY: Int
-        get() = prefs.getInt(KEY_TOOLBAR_DORMANT_POS_Y, 500)
-        set(value) = prefs.edit().putInt(KEY_TOOLBAR_DORMANT_POS_Y, value).apply()
+        get() = _toolbarDormantPosY.value
+        set(value) {
+            _toolbarDormantPosY.value = value
+            prefs.edit().putInt(KEY_TOOLBAR_DORMANT_POS_Y, value).apply()
+        }
 
     // Awake State Config
     // Awake Style: "all icons", "custom"
@@ -404,6 +416,26 @@ class SettingsRepository(context: Context) {
         set(value) {
             _toolbarAwakePosition.value = value
             prefs.edit().putString(KEY_TOOLBAR_AWAKE_POSITION, value).apply()
+        }
+
+    private val _toolbarAwakePosX = MutableStateFlow(prefs.getInt(KEY_TOOLBAR_AWAKE_POS_X, 16))
+    val toolbarAwakePosXFlow: StateFlow<Int> = _toolbarAwakePosX
+
+    var toolbarAwakePosX: Int
+        get() = _toolbarAwakePosX.value
+        set(value) {
+            _toolbarAwakePosX.value = value
+            prefs.edit().putInt(KEY_TOOLBAR_AWAKE_POS_X, value).apply()
+        }
+
+    private val _toolbarAwakePosY = MutableStateFlow(prefs.getInt(KEY_TOOLBAR_AWAKE_POS_Y, 500))
+    val toolbarAwakePosYFlow: StateFlow<Int> = _toolbarAwakePosY
+
+    var toolbarAwakePosY: Int
+        get() = _toolbarAwakePosY.value
+        set(value) {
+            _toolbarAwakePosY.value = value
+            prefs.edit().putInt(KEY_TOOLBAR_AWAKE_POS_Y, value).apply()
         }
 
     // All Icons Order: "inner", "outer", "left", "right", "up", "down"
@@ -493,6 +525,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_TOOLBAR_AWAKE_STYLE = "toolbar_awake_style"
         private const val KEY_TOOLBAR_AWAKE_LOCKED = "toolbar_awake_locked"
         private const val KEY_TOOLBAR_AWAKE_POSITION = "toolbar_awake_position"
+        private const val KEY_TOOLBAR_AWAKE_POS_X = "toolbar_awake_pos_x"
+        private const val KEY_TOOLBAR_AWAKE_POS_Y = "toolbar_awake_pos_y"
         private const val KEY_TOOLBAR_ALL_ICONS_ORDER = "toolbar_all_icons_order"
 
         private const val KEY_TOOLBAR_WAKE_GESTURE = "toolbar_wake_gesture"

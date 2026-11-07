@@ -213,50 +213,56 @@ class ScreenCaptureService : Service() {
             return@withContext null
         }
 
-        // 1. Try to acquire the latest image immediately if one is already buffered
-        var immediateBitmap: Bitmap? = null
+        // 1. Drain any stale buffered images captured while overlays or the software keyboard were visible
         try {
-            val image = reader.acquireLatestImage()
-            if (image != null) {
+            while (true) {
+                val stale = reader.acquireLatestImage() ?: break
+                stale.close()
+            }
+        } catch (e: Exception) {
+            // Drain completed or empty
+        }
+
+        val deferredImage = CompletableDeferred<Bitmap?>()
+        val mainHandler = Handler(Looper.getMainLooper())
+
+        reader.setOnImageAvailableListener({ r ->
+            try {
+                val img = r.acquireLatestImage()
+                if (img != null) {
+                    try {
+                        val bmp = processImageToBitmap(img, cropRect)
+                        if (!deferredImage.isCompleted) {
+                            deferredImage.complete(bmp)
+                        }
+                    } finally {
+                        img.close()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error acquiring screenshot bitmap in listener", e)
+                if (!deferredImage.isCompleted) {
+                    deferredImage.complete(null)
+                }
+            } finally {
+                reader.setOnImageAvailableListener(null, null)
+            }
+        }, mainHandler)
+
+        // Try immediate acquire first if a fresh frame arrived right after drain, or wait for next available frame
+        val immediateBitmap = try {
+            reader.acquireLatestImage()?.let { img ->
                 try {
-                    immediateBitmap = processImageToBitmap(image, cropRect)
+                    processImageToBitmap(img, cropRect)
                 } finally {
-                    image.close()
+                    img.close()
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error in immediate acquireLatestImage", e)
+            null
         }
 
-        val bitmap: Bitmap? = if (immediateBitmap != null) {
-            immediateBitmap
-        } else {
-            val deferredImage = CompletableDeferred<Bitmap?>()
-            val mainHandler = Handler(Looper.getMainLooper())
-
-            reader.setOnImageAvailableListener({ r ->
-                try {
-                    val img = r.acquireLatestImage()
-                    if (img != null) {
-                        try {
-                            val bmp = processImageToBitmap(img, cropRect)
-                            if (!deferredImage.isCompleted) {
-                                deferredImage.complete(bmp)
-                            }
-                        } finally {
-                            img.close()
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error acquiring screenshot bitmap in listener", e)
-                    if (!deferredImage.isCompleted) {
-                        deferredImage.complete(null)
-                    }
-                } finally {
-                    reader.setOnImageAvailableListener(null, null)
-                }
-            }, mainHandler)
-
+        val bitmap: Bitmap? = immediateBitmap ?: run {
             val result = withTimeoutOrNull(2500) { deferredImage.await() }
             if (result == null) {
                 reader.setOnImageAvailableListener(null, null)

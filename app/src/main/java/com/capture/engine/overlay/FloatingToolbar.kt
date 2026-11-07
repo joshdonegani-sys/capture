@@ -1,10 +1,24 @@
 package com.capture.engine.overlay
 
+import android.graphics.BlurMaskFilter
 import android.graphics.Rect
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,6 +39,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -63,13 +78,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layoutId
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import com.capture.engine.CaptureApplication
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.abs
@@ -105,7 +123,7 @@ fun calculateSubPlacement(
     subDirection: String,
     subAlign: String,
     subAlignModifier: String,
-    expandedTarget: ExpandedTarget,
+    expandedTarget: ExpandedTarget = ExpandedTarget.JOINED_BOTH,
     stayOnScreen: Boolean,
     gapPx: Int = 16,
     screenMargin: Int = 16
@@ -113,30 +131,38 @@ fun calculateSubPlacement(
     val effectiveGap = gapPx
     var effectiveDir = subDirection
 
-    // Auto-flip for clearance if stayOnScreen is enabled
+    // Auto-flip for clearance if stayOnScreen is enabled and opposite side has more room
     if (stayOnScreen) {
         when (subDirection) {
             "up" -> {
                 val idealY = baseAnchorY - subH - effectiveGap
-                if (idealY < screenMargin && (baseAnchorY + baseH + effectiveGap + subH <= screenHeight - screenMargin)) {
+                val spaceAbove = baseAnchorY - effectiveGap - screenMargin
+                val spaceBelow = screenHeight - screenMargin - (baseAnchorY + baseH + effectiveGap)
+                if (idealY < screenMargin && spaceBelow > spaceAbove) {
                     effectiveDir = "down"
                 }
             }
             "down" -> {
                 val idealY = baseAnchorY + baseH + effectiveGap
-                if (idealY + subH > screenHeight - screenMargin && (baseAnchorY - subH - effectiveGap >= screenMargin)) {
+                val spaceBelow = screenHeight - screenMargin - (baseAnchorY + baseH + effectiveGap)
+                val spaceAbove = baseAnchorY - effectiveGap - screenMargin
+                if (idealY + subH > screenHeight - screenMargin && spaceAbove > spaceBelow) {
                     effectiveDir = "up"
                 }
             }
             "left" -> {
                 val idealX = baseAnchorX - subW - effectiveGap
-                if (idealX < screenMargin && (baseAnchorX + baseW + effectiveGap + subW <= screenWidth - screenMargin)) {
+                val spaceLeft = baseAnchorX - effectiveGap - screenMargin
+                val spaceRight = screenWidth - screenMargin - (baseAnchorX + baseW + effectiveGap)
+                if (idealX < screenMargin && spaceRight > spaceLeft) {
                     effectiveDir = "right"
                 }
             }
             "right" -> {
                 val idealX = baseAnchorX + baseW + effectiveGap
-                if (idealX + subW > screenWidth - screenMargin && (baseAnchorX - subW - effectiveGap >= screenMargin)) {
+                val spaceRight = screenWidth - screenMargin - (baseAnchorX + baseW + effectiveGap)
+                val spaceLeft = baseAnchorX - effectiveGap - screenMargin
+                if (idealX + subW > screenWidth - screenMargin && spaceLeft > spaceRight) {
                     effectiveDir = "left"
                 }
             }
@@ -165,11 +191,11 @@ fun calculateSubPlacement(
     if (effectiveDir == "down" || effectiveDir == "up") {
         // Cross axis is horizontal (X)
         if (subAlign == "base icon" && baseLayout == "horiz") {
-            val (anchorStart, anchorCenter, anchorEnd) = when (expandedTarget) {
-                ExpandedTarget.INPUT_ONLY -> Triple(baseAnchorX, baseAnchorX + (baseW * 0.25f).toInt(), baseAnchorX + (baseW * 0.5f).toInt())
-                ExpandedTarget.CONTEXT_ONLY -> Triple(baseAnchorX + (baseW * 0.5f).toInt(), baseAnchorX + (baseW * 0.75f).toInt(), baseAnchorX + baseW)
-                else -> Triple(baseAnchorX, baseAnchorX + (baseW / 2), baseAnchorX + baseW)
-            }
+            // Anchor relative to base icon (menu or action button at end of base bar)
+            val iconW = if (baseW > 0) baseW / 2 else 0
+            val anchorStart = baseAnchorX + baseW - iconW
+            val anchorCenter = baseAnchorX + baseW - (iconW / 2)
+            val anchorEnd = baseAnchorX + baseW
             targetX = when (subAlignModifier) {
                 "start", "top", "left" -> anchorStart
                 "end", "bottom", "right" -> anchorEnd - subW
@@ -186,15 +212,15 @@ fun calculateSubPlacement(
     } else {
         // Cross axis is vertical (Y)
         if (subAlign == "base icon" && baseLayout == "vert") {
-            val (anchorStart, anchorCenter, anchorEnd) = when (expandedTarget) {
-                ExpandedTarget.INPUT_ONLY -> Triple(baseAnchorY, baseAnchorY + (baseH * 0.25f).toInt(), baseAnchorY + (baseH * 0.5f).toInt())
-                ExpandedTarget.CONTEXT_ONLY -> Triple(baseAnchorY + (baseH * 0.5f).toInt(), baseAnchorY + (baseH * 0.75f).toInt(), baseAnchorY + baseH)
-                else -> Triple(baseAnchorY, baseAnchorY + (baseH / 2), baseAnchorY + baseH)
-            }
+            // Anchor relative to base icon (menu or action button at bottom of vertical bar)
+            val iconH = if (baseH > 0) baseH / 2 else 0
+            val iconStartY = baseAnchorY + baseH - iconH
+            val iconCenterY = baseAnchorY + baseH - (iconH / 2)
+            val iconEndY = baseAnchorY + baseH
             targetY = when (subAlignModifier) {
-                "start", "top", "up" -> anchorStart
-                "end", "bottom", "down" -> anchorEnd - subH
-                else -> anchorCenter - (subH / 2)
+                "start", "top", "up" -> iconStartY
+                "end", "bottom", "down" -> iconEndY - subH
+                else -> iconCenterY - (subH / 2)
             }
         } else {
             // Full Base (or horizontal base bar)
@@ -210,7 +236,7 @@ fun calculateSubPlacement(
         val minX = screenMargin
         val maxX = (screenWidth - subW - screenMargin).coerceAtLeast(minX)
         val minY = screenMargin
-        val maxY = (screenHeight - subH - screenMargin - 70).coerceAtLeast(minY)
+        val maxY = (screenHeight - subH - screenMargin).coerceAtLeast(minY)
 
         targetX = targetX.coerceIn(minX, maxX)
         targetY = targetY.coerceIn(minY, maxY)
@@ -237,6 +263,8 @@ fun FloatingToolbar(
     screenHeight: Int,
     onExpandToggle: () -> Unit,
     onCollapse: () -> Unit,
+    onDragStart: () -> Unit = {},
+    onDragEnd: () -> Unit = {},
     onDrag: (Float, Float) -> Unit,
     onFlickSleep: () -> Unit,
     onInputClick: () -> Unit,
@@ -259,6 +287,7 @@ fun FloatingToolbar(
     val colorRole by settings.toolbarColorRoleFlow.collectAsState()
     val customSeedColor by settings.toolbarCustomSeedColorFlow.collectAsState()
     val visibleInputIcons by settings.visibleInputIconsFlow.collectAsState()
+    val customIcons by settings.toolbarCustomIconsFlow.collectAsState()
     val lastUsedInput by settings.lastUsedInputTypeFlow.collectAsState()
 
     val baseLayout by settings.toolbarBaseLayoutFlow.collectAsState()
@@ -293,329 +322,424 @@ fun FloatingToolbar(
 
     val hasActiveContext = screenGrab || appTree || highlightedText || media || pointActive || activeSelection != null
 
-    androidx.compose.animation.Crossfade(
-        targetState = expanded,
-        animationSpec = tween(180, easing = FastOutSlowInEasing),
-        label = "ToolbarDormantAwakeTransition"
-    ) { isAwake ->
-        if (!isAwake) {
-            // --- DORMANT STATE ---
-            Box(
-                modifier = Modifier
-                    .padding(12.dp)
-                    .pointerInput(dormantLocked, wakeGesture) {
-                        if (!dormantLocked) {
-                            detectDragGestures(
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    onDrag(dragAmount.x, dragAmount.y)
+    val dormantW: Dp = when (dormantStyle) {
+        "small icon" -> (iconSize + 12f).dp.coerceAtLeast(36.dp)
+        "vertical bar" -> 20.dp
+        else -> (iconSize * 2.5f).dp.coerceAtLeast(60.dp)
+    }
+    val dormantH: Dp = when (dormantStyle) {
+        "small icon" -> (iconSize + 12f).dp.coerceAtLeast(36.dp)
+        "vertical bar" -> (iconSize * 2.5f).dp.coerceAtLeast(60.dp)
+        else -> 20.dp
+    }
+    val dormantRadiusDp: Dp = when (dormantStyle) {
+        "small icon" -> ((iconSize + 12f) / 2).dp
+        else -> 10.dp
+    }
+
+    val isHoriz = baseLayout == "horiz"
+    val customCount = customIcons.size.coerceAtLeast(1)
+
+    val awakeW: Dp
+    val awakeH: Dp
+
+    if (awakeStyle == "all icons") {
+        val inputClusterW = (buttonSize + 3.dp) * 6 + 8.dp
+        val contextClusterW = (menuButtonSize + 3.dp) * 6 + 8.dp
+        val maxRowW = if (inputClusterW > contextClusterW) inputClusterW else contextClusterW
+        val stackedH = buttonSize + menuButtonSize + 15.dp
+
+        if (isHoriz) {
+            awakeW = maxRowW
+            awakeH = stackedH
+        } else {
+            awakeW = stackedH
+            awakeH = maxRowW
+        }
+    } else {
+        val longAxisDp = (buttonSize + 3.dp) * customCount + 5.dp
+        val shortAxisDp = buttonSize + 8.dp
+
+        if (isHoriz) {
+            awakeW = longAxisDp
+            awakeH = shortAxisDp
+        } else {
+            awakeW = shortAxisDp
+            awakeH = longAxisDp
+        }
+    }
+
+    val morphProgress by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = 0.74f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "ToolbarMorphProgress"
+    )
+
+    val animatedWidth by animateDpAsState(
+        targetValue = if (expanded) awakeW else dormantW,
+        animationSpec = spring(
+            dampingRatio = 0.74f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "ToolbarMorphWidth"
+    )
+
+    val animatedHeight by animateDpAsState(
+        targetValue = if (expanded) awakeH else dormantH,
+        animationSpec = spring(
+            dampingRatio = 0.74f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "ToolbarMorphHeight"
+    )
+
+    val currentRadiusDp = lerp(dormantRadiusDp, 20.dp, morphProgress)
+
+    var dragVelocityTrackerX by remember { mutableStateOf(0f) }
+    var dragVelocityTrackerY by remember { mutableStateOf(0f) }
+
+    Box(
+        modifier = Modifier
+            .padding(12.dp)
+            .pointerInput(expanded, dormantLocked, awakeLocked, wakeGesture, sleepGesture) {
+                if (expanded) {
+                    if (!awakeLocked) {
+                        detectDragGestures(
+                            onDragStart = {
+                                onDragStart()
+                            },
+                            onDragEnd = {
+                                if (sleepGesture == "flick") {
+                                    val speed = abs(dragVelocityTrackerX) + abs(dragVelocityTrackerY)
+                                    if (speed > 60f) {
+                                        onFlickSleep()
+                                    }
                                 }
+                                dragVelocityTrackerX = 0f
+                                dragVelocityTrackerY = 0f
+                                onDragEnd()
+                            },
+                            onDragCancel = {
+                                dragVelocityTrackerX = 0f
+                                dragVelocityTrackerY = 0f
+                                onDragEnd()
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragVelocityTrackerX = dragAmount.x
+                                dragVelocityTrackerY = dragAmount.y
+                                onDrag(dragAmount.x, dragAmount.y)
+                            }
+                        )
+                    }
+                } else {
+                    if (!dormantLocked) {
+                        detectDragGestures(
+                            onDragStart = {
+                                onDragStart()
+                            },
+                            onDragEnd = {
+                                onDragEnd()
+                            },
+                            onDragCancel = {
+                                onDragEnd()
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                onDrag(dragAmount.x, dragAmount.y)
+                            }
+                        )
+                    }
+                }
+            }
+            .pointerInput(expanded, wakeGesture, sleepGesture) {
+                if (!expanded) {
+                    when (wakeGesture) {
+                        "double tap" -> {
+                            detectTapGestures(
+                                onDoubleTap = { onExpandToggle() }
+                            )
+                        }
+                        "long tap" -> {
+                            detectTapGestures(
+                                onLongPress = { onExpandToggle() }
+                            )
+                        }
+                        else -> {
+                            // "single tap" (default) -> ONLY onTap, completely omitting onDoubleTap/onLongPress
+                            // This eliminates Compose's double-tap timeout wait and fires INSTANTANEOUSLY on tap!
+                            detectTapGestures(
+                                onTap = { onExpandToggle() }
                             )
                         }
                     }
-                    .pointerInput(wakeGesture) {
+                } else {
+                    if (sleepGesture == "double tap" || sleepGesture.isBlank()) {
                         detectTapGestures(
-                            onTap = {
-                                if (wakeGesture == "single tap" || wakeGesture.isBlank()) {
-                                    onExpandToggle()
-                                }
-                            },
-                            onDoubleTap = {
-                                if (wakeGesture == "double tap") {
-                                    onExpandToggle()
-                                }
-                            },
-                            onLongPress = {
-                                if (wakeGesture == "long tap") {
-                                    onExpandToggle()
-                                }
-                            }
+                            onDoubleTap = { onCollapse() }
                         )
-                    },
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        val toolbarShape = RoundedCornerShape(currentRadiusDp)
+        Surface(
+            shape = toolbarShape,
+            color = colors.containerColor,
+            tonalElevation = tonalElevation.dp,
+            shadowElevation = 0.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+            modifier = Modifier
+                .size(animatedWidth, animatedHeight)
+                .cleanDropShadow(
+                    shape = toolbarShape,
+                    elevation = shadowElevation.dp
+                )
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Surface(
-                    shape = CircleShape,
-                    color = colors.containerColor,
-                    tonalElevation = tonalElevation.dp,
-                    shadowElevation = shadowElevation.dp,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                ) {
-                    when (dormantStyle) {
-                        "small icon" -> {
-                            Box(
-                                modifier = Modifier
-                                    .size((iconSize + 12f).dp.coerceAtLeast(36.dp))
-                                    .clip(CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Flare,
-                                    contentDescription = "Dormant Toolbar Icon",
-                                    tint = colors.contentColor,
-                                    modifier = Modifier.size(iconSizeDp * 0.85f)
-                                )
-                            }
-                        }
-                        "vertical bar" -> {
-                            Box(
-                                modifier = Modifier
-                                    .width(20.dp)
-                                    .height((iconSize * 2.5f).dp.coerceAtLeast(60.dp))
-                                    .clip(CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Surface(
+                // 1. DORMANT GLYPH (fades out as morphProgress goes 0 -> 0.3)
+                if (morphProgress < 0.95f) {
+                    Box(
+                        modifier = Modifier
+                            .graphicsLayer {
+                                this.alpha = (1f - morphProgress * 3.0f).coerceIn(0f, 1f)
+                                this.scaleX = 0.7f + 0.3f * (1f - morphProgress)
+                                this.scaleY = 0.7f + 0.3f * (1f - morphProgress)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when (dormantStyle) {
+                            "small icon" -> {
+                                Box(
                                     modifier = Modifier
-                                        .width(4.dp)
-                                        .height((iconSize * 1.8f).dp.coerceAtLeast(40.dp)),
-                                    shape = CircleShape,
-                                    color = colors.contentColor.copy(alpha = 0.6f)
-                                ) {}
+                                        .size((iconSize + 12f).dp.coerceAtLeast(36.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Flare,
+                                        contentDescription = "Dormant Toolbar Icon",
+                                        tint = colors.contentColor,
+                                        modifier = Modifier.size(iconSizeDp * 0.85f)
+                                    )
+                                }
                             }
-                        }
-                        else -> {
-                            // "horizontal bar" (Default)
-                            Box(
-                                modifier = Modifier
-                                    .width((iconSize * 2.5f).dp.coerceAtLeast(60.dp))
-                                    .height(20.dp)
-                                    .clip(CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Surface(
+                            "vertical bar" -> {
+                                Box(
                                     modifier = Modifier
-                                        .width((iconSize * 1.8f).dp.coerceAtLeast(40.dp))
-                                        .height(4.dp),
-                                    shape = CircleShape,
-                                    color = colors.contentColor.copy(alpha = 0.6f)
-                                ) {}
+                                        .width(20.dp)
+                                        .height((iconSize * 2.5f).dp.coerceAtLeast(60.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Surface(
+                                        modifier = Modifier
+                                            .width(4.dp)
+                                            .height((iconSize * 1.8f).dp.coerceAtLeast(40.dp)),
+                                        shape = CircleShape,
+                                        color = colors.contentColor.copy(alpha = 0.6f)
+                                    ) {}
+                                }
+                            }
+                            else -> {
+                                // "horizontal bar" (Default)
+                                Box(
+                                    modifier = Modifier
+                                        .width((iconSize * 2.5f).dp.coerceAtLeast(60.dp))
+                                        .height(20.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Surface(
+                                        modifier = Modifier
+                                            .width((iconSize * 1.8f).dp.coerceAtLeast(40.dp))
+                                            .height(4.dp),
+                                        shape = CircleShape,
+                                        color = colors.contentColor.copy(alpha = 0.6f)
+                                    ) {}
+                                }
                             }
                         }
                     }
                 }
-            }
-        } else {
-            // --- AWAKE STATE ---
-            var dragVelocityTrackerX by remember { mutableStateOf(0f) }
-            var dragVelocityTrackerY by remember { mutableStateOf(0f) }
 
-            Box(
-                modifier = Modifier
-                    .padding(12.dp)
-                    .pointerInput(awakeLocked, sleepGesture) {
-                        if (!awakeLocked) {
-                            detectDragGestures(
-                                onDragEnd = {
-                                    if (sleepGesture == "flick") {
-                                        val speed = abs(dragVelocityTrackerX) + abs(dragVelocityTrackerY)
-                                        if (speed > 60f) {
-                                            onFlickSleep()
-                                        }
-                                    }
-                                    dragVelocityTrackerX = 0f
-                                    dragVelocityTrackerY = 0f
-                                },
-                                onDrag = { change, dragAmount ->
-                                    change.consume()
-                                    dragVelocityTrackerX = dragAmount.x
-                                    dragVelocityTrackerY = dragAmount.y
-                                    onDrag(dragAmount.x, dragAmount.y)
-                                }
+                // 2. AWAKE ICONS CLUSTER (fades in as morphProgress goes 0.15 -> 1.0)
+                if (morphProgress > 0.05f) {
+                    Box(
+                        modifier = Modifier
+                            .graphicsLayer {
+                                this.alpha = ((morphProgress - 0.15f) / 0.85f).coerceIn(0f, 1f)
+                                this.scaleX = 0.85f + 0.15f * morphProgress
+                                this.scaleY = 0.85f + 0.15f * morphProgress
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (awakeStyle == "all icons") {
+                            val isInputFirst = resolveAllIconsOrder(
+                                orderSetting = allIconsOrder,
+                                isHoriz = isHoriz,
+                                windowPosX = windowPosX,
+                                windowPosY = windowPosY,
+                                screenWidth = screenWidth,
+                                screenHeight = screenHeight
                             )
-                        }
-                    }
-                    .pointerInput(sleepGesture) {
-                        detectTapGestures(
-                            onDoubleTap = {
-                                if (sleepGesture == "double tap" || sleepGesture.isBlank()) {
-                                    onCollapse()
-                                }
-                            }
-                        )
-                    },
-                contentAlignment = Alignment.TopStart
-            ) {
-                if (awakeStyle == "all icons") {
-                    // --- ALL ICONS MODE ---
-                    val isHoriz = baseLayout == "horiz"
-                    val isInputFirst = resolveAllIconsOrder(
-                        orderSetting = allIconsOrder,
-                        isHoriz = isHoriz,
-                        windowPosX = windowPosX,
-                        windowPosY = windowPosY,
-                        screenWidth = screenWidth,
-                        screenHeight = screenHeight
-                    )
 
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = colors.containerColor,
-                        tonalElevation = tonalElevation.dp,
-                        shadowElevation = shadowElevation.dp,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                    ) {
-                        if (isHoriz) {
-                            Column(
-                                modifier = Modifier
-                                    .width(IntrinsicSize.Min)
-                                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                if (isInputFirst) {
-                                    InputSubGroupContent(true, visibleInputIcons, pointActive, activeSelection, buttonSize, iconSizeDp, colors.contentColor, colors.activeContainerColor, colors.activeContentColor) { settings.lastUsedInputType = it; onInputSubSelected(it) }
-                                    HorizontalDivider(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                                    ContextSubGroupContent(true, screenGrab, { settings.isScreenGrabActive = it }, appTree, { settings.isAppTreeActive = it }, highlightedText, { settings.isHighlightedTextActive = it }, media, { settings.isMediaActive = it }, { onSelectAllContext(); settings.isScreenGrabActive = true; settings.isAppTreeActive = true; settings.isHighlightedTextActive = true; settings.isMediaActive = true }, { onSelectNoneContext(); settings.isScreenGrabActive = false; settings.isAppTreeActive = false; settings.isHighlightedTextActive = false; settings.isMediaActive = false }, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
-                                } else {
-                                    ContextSubGroupContent(true, screenGrab, { settings.isScreenGrabActive = it }, appTree, { settings.isAppTreeActive = it }, highlightedText, { settings.isHighlightedTextActive = it }, media, { settings.isMediaActive = it }, { onSelectAllContext(); settings.isScreenGrabActive = true; settings.isAppTreeActive = true; settings.isHighlightedTextActive = true; settings.isMediaActive = true }, { onSelectNoneContext(); settings.isScreenGrabActive = false; settings.isAppTreeActive = false; settings.isHighlightedTextActive = false; settings.isMediaActive = false }, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
-                                    HorizontalDivider(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                                    InputSubGroupContent(true, visibleInputIcons, pointActive, activeSelection, buttonSize, iconSizeDp, colors.contentColor, colors.activeContainerColor, colors.activeContentColor) { settings.lastUsedInputType = it; onInputSubSelected(it) }
+                            if (isHoriz) {
+                                Column(
+                                    modifier = Modifier
+                                        .width(IntrinsicSize.Min)
+                                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    if (isInputFirst) {
+                                        InputSubGroupContent(true, visibleInputIcons, pointActive, activeSelection, buttonSize, iconSizeDp, colors.contentColor, colors.activeContainerColor, colors.activeContentColor) { settings.lastUsedInputType = it; onInputSubSelected(it) }
+                                        HorizontalDivider(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                                        ContextSubGroupContent(true, screenGrab, { settings.isScreenGrabActive = it }, appTree, { settings.isAppTreeActive = it }, highlightedText, { settings.isHighlightedTextActive = it }, media, { settings.isMediaActive = it }, { onSelectAllContext(); settings.isScreenGrabActive = true; settings.isAppTreeActive = true; settings.isHighlightedTextActive = true; settings.isMediaActive = true }, { onSelectNoneContext(); settings.isScreenGrabActive = false; settings.isAppTreeActive = false; settings.isHighlightedTextActive = false; settings.isMediaActive = false }, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
+                                    } else {
+                                        ContextSubGroupContent(true, screenGrab, { settings.isScreenGrabActive = it }, appTree, { settings.isAppTreeActive = it }, highlightedText, { settings.isHighlightedTextActive = it }, media, { settings.isMediaActive = it }, { onSelectAllContext(); settings.isScreenGrabActive = true; settings.isAppTreeActive = true; settings.isHighlightedTextActive = true; settings.isMediaActive = true }, { onSelectNoneContext(); settings.isScreenGrabActive = false; settings.isAppTreeActive = false; settings.isHighlightedTextActive = false; settings.isMediaActive = false }, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
+                                        HorizontalDivider(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                                        InputSubGroupContent(true, visibleInputIcons, pointActive, activeSelection, buttonSize, iconSizeDp, colors.contentColor, colors.activeContainerColor, colors.activeContentColor) { settings.lastUsedInputType = it; onInputSubSelected(it) }
+                                    }
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier
+                                        .height(IntrinsicSize.Min)
+                                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    if (isInputFirst) {
+                                        InputSubGroupContent(false, visibleInputIcons, pointActive, activeSelection, buttonSize, iconSizeDp, colors.contentColor, colors.activeContainerColor, colors.activeContentColor) { settings.lastUsedInputType = it; onInputSubSelected(it) }
+                                        VerticalDivider(modifier = Modifier.fillMaxHeight().padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                                        ContextSubGroupContent(false, screenGrab, { settings.isScreenGrabActive = it }, appTree, { settings.isAppTreeActive = it }, highlightedText, { settings.isHighlightedTextActive = it }, media, { settings.isMediaActive = it }, { onSelectAllContext(); settings.isScreenGrabActive = true; settings.isAppTreeActive = true; settings.isHighlightedTextActive = true; settings.isMediaActive = true }, { onSelectNoneContext(); settings.isScreenGrabActive = false; settings.isAppTreeActive = false; settings.isHighlightedTextActive = false; settings.isMediaActive = false }, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
+                                    } else {
+                                        ContextSubGroupContent(false, screenGrab, { settings.isScreenGrabActive = it }, appTree, { settings.isAppTreeActive = it }, highlightedText, { settings.isHighlightedTextActive = it }, media, { settings.isMediaActive = it }, { onSelectAllContext(); settings.isScreenGrabActive = true; settings.isAppTreeActive = true; settings.isHighlightedTextActive = true; settings.isMediaActive = true }, { onSelectNoneContext(); settings.isScreenGrabActive = false; settings.isAppTreeActive = false; settings.isHighlightedTextActive = false; settings.isMediaActive = false }, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
+                                        VerticalDivider(modifier = Modifier.fillMaxHeight().padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                                        InputSubGroupContent(false, visibleInputIcons, pointActive, activeSelection, buttonSize, iconSizeDp, colors.contentColor, colors.activeContainerColor, colors.activeContentColor) { settings.lastUsedInputType = it; onInputSubSelected(it) }
+                                    }
                                 }
                             }
                         } else {
-                            Row(
-                                modifier = Modifier
-                                    .height(IntrinsicSize.Min)
-                                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                if (isInputFirst) {
-                                    InputSubGroupContent(false, visibleInputIcons, pointActive, activeSelection, buttonSize, iconSizeDp, colors.contentColor, colors.activeContainerColor, colors.activeContentColor) { settings.lastUsedInputType = it; onInputSubSelected(it) }
-                                    VerticalDivider(modifier = Modifier.fillMaxHeight().padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                                    ContextSubGroupContent(false, screenGrab, { settings.isScreenGrabActive = it }, appTree, { settings.isAppTreeActive = it }, highlightedText, { settings.isHighlightedTextActive = it }, media, { settings.isMediaActive = it }, { onSelectAllContext(); settings.isScreenGrabActive = true; settings.isAppTreeActive = true; settings.isHighlightedTextActive = true; settings.isMediaActive = true }, { onSelectNoneContext(); settings.isScreenGrabActive = false; settings.isAppTreeActive = false; settings.isHighlightedTextActive = false; settings.isMediaActive = false }, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
-                                } else {
-                                    ContextSubGroupContent(false, screenGrab, { settings.isScreenGrabActive = it }, appTree, { settings.isAppTreeActive = it }, highlightedText, { settings.isHighlightedTextActive = it }, media, { settings.isMediaActive = it }, { onSelectAllContext(); settings.isScreenGrabActive = true; settings.isAppTreeActive = true; settings.isHighlightedTextActive = true; settings.isMediaActive = true }, { onSelectNoneContext(); settings.isScreenGrabActive = false; settings.isAppTreeActive = false; settings.isHighlightedTextActive = false; settings.isMediaActive = false }, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
-                                    VerticalDivider(modifier = Modifier.fillMaxHeight().padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                                    InputSubGroupContent(false, visibleInputIcons, pointActive, activeSelection, buttonSize, iconSizeDp, colors.contentColor, colors.activeContainerColor, colors.activeContentColor) { settings.lastUsedInputType = it; onInputSubSelected(it) }
+                            val (lastIcon, lastDesc) = when (lastUsedInput) {
+                                "mic_audio" -> Icons.Default.Mic to "Record"
+                                "clipboard_paste" -> Icons.Default.ContentPaste to "Paste"
+                                "text_snippet" -> Icons.Default.Keyboard to "Type"
+                                "camera" -> Icons.Default.PhotoCamera to "Camera"
+                                "point_mode" -> Icons.Default.AdsClick to "Point"
+                                else -> Icons.Default.RecordVoiceOver to "Dictate"
+                            }
+
+                            val renderItem: @Composable (String) -> Unit = { key ->
+                                when (key) {
+                                    "speech_to_text" -> ToolbarIconButton(
+                                        icon = Icons.Default.RecordVoiceOver,
+                                        contentDescription = "Dictate",
+                                        buttonSize = buttonSize,
+                                        iconSize = iconSizeDp,
+                                        activeContainerColor = colors.activeContainerColor,
+                                        activeContentColor = colors.activeContentColor,
+                                        contentColor = colors.contentColor,
+                                        onClick = { onInputSubSelected("speech_to_text") }
+                                    )
+                                    "mic_audio" -> ToolbarIconButton(
+                                        icon = Icons.Default.Mic,
+                                        contentDescription = "Record Audio",
+                                        buttonSize = buttonSize,
+                                        iconSize = iconSizeDp,
+                                        activeContainerColor = colors.activeContainerColor,
+                                        activeContentColor = colors.activeContentColor,
+                                        contentColor = colors.contentColor,
+                                        onClick = { onInputSubSelected("mic_audio") }
+                                    )
+                                    "clipboard_paste" -> ToolbarIconButton(
+                                        icon = Icons.Default.ContentPaste,
+                                        contentDescription = "Paste Clipboard",
+                                        buttonSize = buttonSize,
+                                        iconSize = iconSizeDp,
+                                        activeContainerColor = colors.activeContainerColor,
+                                        activeContentColor = colors.activeContentColor,
+                                        contentColor = colors.contentColor,
+                                        onClick = { onInputSubSelected("clipboard_paste") }
+                                    )
+                                    "text_snippet" -> ToolbarIconButton(
+                                        icon = Icons.Default.Keyboard,
+                                        contentDescription = "Type Text",
+                                        buttonSize = buttonSize,
+                                        iconSize = iconSizeDp,
+                                        activeContainerColor = colors.activeContainerColor,
+                                        activeContentColor = colors.activeContentColor,
+                                        contentColor = colors.contentColor,
+                                        onClick = { onInputSubSelected("text_snippet") }
+                                    )
+                                    "camera" -> ToolbarIconButton(
+                                        icon = Icons.Default.PhotoCamera,
+                                        contentDescription = "Camera",
+                                        buttonSize = buttonSize,
+                                        iconSize = iconSizeDp,
+                                        activeContainerColor = colors.activeContainerColor,
+                                        activeContentColor = colors.activeContentColor,
+                                        contentColor = colors.contentColor,
+                                        onClick = { onInputSubSelected("camera") }
+                                    )
+                                    "point_mode" -> ToolbarIconButton(
+                                        icon = Icons.Default.AdsClick,
+                                        contentDescription = "Point Mode",
+                                        buttonSize = buttonSize,
+                                        iconSize = iconSizeDp,
+                                        isActive = pointActive,
+                                        activeContainerColor = colors.activeContainerColor,
+                                        activeContentColor = colors.activeContentColor,
+                                        contentColor = colors.contentColor,
+                                        onClick = onTogglePointMode
+                                    )
+                                    "last_used" -> ToolbarIconButton(
+                                        icon = lastIcon,
+                                        contentDescription = "$lastDesc (Last Used)",
+                                        buttonSize = buttonSize,
+                                        iconSize = iconSizeDp,
+                                        isActive = target == ExpandedTarget.INPUT_ONLY || target == ExpandedTarget.JOINED_BOTH,
+                                        activeContainerColor = colors.activeContainerColor,
+                                        activeContentColor = colors.activeContentColor,
+                                        contentColor = colors.contentColor,
+                                        onClick = onInputClick
+                                    )
+                                    "menu" -> ToolbarIconButton(
+                                        icon = Icons.Default.Menu,
+                                        contentDescription = "Menu",
+                                        buttonSize = buttonSize,
+                                        iconSize = iconSizeDp,
+                                        isActive = target == ExpandedTarget.CONTEXT_ONLY || target == ExpandedTarget.JOINED_BOTH,
+                                        activeContainerColor = colors.activeContainerColor,
+                                        activeContentColor = colors.activeContentColor,
+                                        contentColor = colors.contentColor,
+                                        onClick = onContextClick,
+                                        onLongClick = onContextLongClick
+                                    )
                                 }
                             }
-                        }
-                    }
-                } else {
-                    // --- STATIONARY BASE BAR (Custom Items Mode) ---
-                    val (lastIcon, lastDesc) = when (lastUsedInput) {
-                        "mic_audio" -> Icons.Default.Mic to "Record"
-                        "clipboard_paste" -> Icons.Default.ContentPaste to "Paste"
-                        "text_snippet" -> Icons.Default.Keyboard to "Type"
-                        "camera" -> Icons.Default.PhotoCamera to "Camera"
-                        "point_mode" -> Icons.Default.AdsClick to "Point"
-                        else -> Icons.Default.RecordVoiceOver to "Dictate"
-                    }
-                    val customIcons by settings.toolbarCustomIconsFlow.collectAsState()
 
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = colors.containerColor,
-                        tonalElevation = tonalElevation.dp,
-                        shadowElevation = shadowElevation.dp,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                    ) {
-                        val renderItem: @Composable (String) -> Unit = { key ->
-                            when (key) {
-                                "speech_to_text" -> ToolbarIconButton(
-                                    icon = Icons.Default.RecordVoiceOver,
-                                    contentDescription = "Dictate",
-                                    buttonSize = buttonSize,
-                                    iconSize = iconSizeDp,
-                                    activeContainerColor = colors.activeContainerColor,
-                                    activeContentColor = colors.activeContentColor,
-                                    contentColor = colors.contentColor,
-                                    onClick = { onInputSubSelected("speech_to_text") }
-                                )
-                                "mic_audio" -> ToolbarIconButton(
-                                    icon = Icons.Default.Mic,
-                                    contentDescription = "Record Audio",
-                                    buttonSize = buttonSize,
-                                    iconSize = iconSizeDp,
-                                    activeContainerColor = colors.activeContainerColor,
-                                    activeContentColor = colors.activeContentColor,
-                                    contentColor = colors.contentColor,
-                                    onClick = { onInputSubSelected("mic_audio") }
-                                )
-                                "clipboard_paste" -> ToolbarIconButton(
-                                    icon = Icons.Default.ContentPaste,
-                                    contentDescription = "Paste Clipboard",
-                                    buttonSize = buttonSize,
-                                    iconSize = iconSizeDp,
-                                    activeContainerColor = colors.activeContainerColor,
-                                    activeContentColor = colors.activeContentColor,
-                                    contentColor = colors.contentColor,
-                                    onClick = { onInputSubSelected("clipboard_paste") }
-                                )
-                                "text_snippet" -> ToolbarIconButton(
-                                    icon = Icons.Default.Keyboard,
-                                    contentDescription = "Type Text",
-                                    buttonSize = buttonSize,
-                                    iconSize = iconSizeDp,
-                                    activeContainerColor = colors.activeContainerColor,
-                                    activeContentColor = colors.activeContentColor,
-                                    contentColor = colors.contentColor,
-                                    onClick = { onInputSubSelected("text_snippet") }
-                                )
-                                "camera" -> ToolbarIconButton(
-                                    icon = Icons.Default.PhotoCamera,
-                                    contentDescription = "Camera",
-                                    buttonSize = buttonSize,
-                                    iconSize = iconSizeDp,
-                                    activeContainerColor = colors.activeContainerColor,
-                                    activeContentColor = colors.activeContentColor,
-                                    contentColor = colors.contentColor,
-                                    onClick = { onInputSubSelected("camera") }
-                                )
-                                "point_mode" -> ToolbarIconButton(
-                                    icon = Icons.Default.AdsClick,
-                                    contentDescription = "Point Mode",
-                                    buttonSize = buttonSize,
-                                    iconSize = iconSizeDp,
-                                    isActive = pointActive,
-                                    activeContainerColor = colors.activeContainerColor,
-                                    activeContentColor = colors.activeContentColor,
-                                    contentColor = colors.contentColor,
-                                    onClick = onTogglePointMode
-                                )
-                                "last_used" -> ToolbarIconButton(
-                                    icon = lastIcon,
-                                    contentDescription = "$lastDesc (Last Used)",
-                                    buttonSize = buttonSize,
-                                    iconSize = iconSizeDp,
-                                    isActive = target == ExpandedTarget.INPUT_ONLY || target == ExpandedTarget.JOINED_BOTH,
-                                    activeContainerColor = colors.activeContainerColor,
-                                    activeContentColor = colors.activeContentColor,
-                                    contentColor = colors.contentColor,
-                                    onClick = onInputClick
-                                )
-                                "menu" -> ToolbarIconButton(
-                                    icon = Icons.Default.Menu,
-                                    contentDescription = "Menu",
-                                    buttonSize = buttonSize,
-                                    iconSize = iconSizeDp,
-                                    isActive = target == ExpandedTarget.CONTEXT_ONLY || target == ExpandedTarget.JOINED_BOTH,
-                                    activeContainerColor = colors.activeContainerColor,
-                                    activeContentColor = colors.activeContentColor,
-                                    contentColor = colors.contentColor,
-                                    onClick = onContextClick,
-                                    onLongClick = onContextLongClick
-                                )
-                            }
-                        }
-
-                        if (baseLayout == "horiz") {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                customIcons.forEach { key -> renderItem(key) }
-                            }
-                        } else {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                customIcons.forEach { key -> renderItem(key) }
+                            if (baseLayout == "horiz") {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    customIcons.forEach { key -> renderItem(key) }
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    customIcons.forEach { key -> renderItem(key) }
+                                }
                             }
                         }
                     }
@@ -667,12 +791,8 @@ fun FloatingSubMenu(
     val isSubHoriz = if (isFlow) isBaseHoriz else !isBaseHoriz
 
     val customIcons by settings.toolbarCustomIconsFlow.collectAsState()
-    val iconSizeDp = iconSize.dp
-    val buttonSize = (iconSize + 10f).dp.coerceIn(28.dp, 36.dp)
-    val menuButtonSize = (iconSize + 4f).dp.coerceIn(24.dp, 32.dp)
-    val menuIconSizeDp = (iconSize - 4f).dp.coerceIn(15.dp, 19.dp)
-    val dividerSize = (iconSize + 4f).dp
-    val baseLongEdgeDp = (buttonSize * customIcons.size.coerceAtLeast(1)) + ((customIcons.size - 1).coerceAtLeast(0) * 3).dp + 8.dp
+    val iconSizeDp = (iconSize - 4f).dp.coerceIn(15.dp, 20.dp)
+    val buttonSize = (iconSize + 8f).dp.coerceIn(28.dp, 36.dp)
 
     val isDark = isSystemInDarkTheme()
     val colors = resolveToolbarColors(
@@ -695,93 +815,139 @@ fun FloatingSubMenu(
             }
             .padding(12.dp)
     ) {
+        val subMenuShape = RoundedCornerShape(20.dp)
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = subMenuShape,
             color = colors.containerColor,
             tonalElevation = tonalElevation.dp,
-            shadowElevation = shadowElevation.dp,
+            shadowElevation = 0.dp,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-            modifier = Modifier.clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) {
-                // Consume clicks on the surface so it doesn't trigger dismissal
-            }
+            modifier = Modifier
+                .cleanDropShadow(
+                    shape = subMenuShape,
+                    elevation = shadowElevation.dp
+                )
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    // Consume clicks on the surface so it doesn't trigger dismissal
+                }
         ) {
-            when (target) {
-                ExpandedTarget.INPUT_ONLY -> {
-                    Box(
-                        modifier = Modifier.padding(4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        InputSubGroupContent(
-                            isHoriz = isSubHoriz,
-                            pointActive = pointActive,
-                            activeSelection = activeSelection,
-                            buttonSize = buttonSize,
-                            iconSizeDp = iconSizeDp,
-                            contentColor = colors.contentColor,
-                            activeContainerColor = colors.activeContainerColor,
-                            activeContentColor = colors.activeContentColor,
-                            onInputSelected = onInputSelected
-                        )
-                    }
+            if (isSubHoriz) {
+                // Horizontal sub-items -> Stack subgroups vertically in a Column (6x2 grid)
+                Column(
+                    modifier = Modifier
+                        .width(IntrinsicSize.Min)
+                        .padding(4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    InputSubGroupContent(
+                        isHoriz = true,
+                        pointActive = pointActive,
+                        activeSelection = activeSelection,
+                        buttonSize = buttonSize,
+                        iconSizeDp = iconSizeDp,
+                        contentColor = colors.contentColor,
+                        activeContainerColor = colors.activeContainerColor,
+                        activeContentColor = colors.activeContentColor,
+                        onInputSelected = onInputSelected
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 2.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    ContextSubGroupContent(
+                        isHoriz = true,
+                        screenGrab = screenGrab,
+                        onScreenGrabChange = { settings.isScreenGrabActive = it },
+                        appTree = appTree,
+                        onAppTreeChange = { settings.isAppTreeActive = it },
+                        highlightedText = highlightedText,
+                        onHighlightedTextChange = { settings.isHighlightedTextActive = it },
+                        media = media,
+                        onMediaChange = { settings.isMediaActive = it },
+                        onSelectAllContext = {
+                            onSelectAllContext()
+                            settings.isScreenGrabActive = true
+                            settings.isAppTreeActive = true
+                            settings.isHighlightedTextActive = true
+                            settings.isMediaActive = true
+                        },
+                        onSelectNoneContext = {
+                            onSelectNoneContext()
+                            settings.isScreenGrabActive = false
+                            settings.isAppTreeActive = false
+                            settings.isHighlightedTextActive = false
+                            settings.isMediaActive = false
+                        },
+                        menuButtonSize = buttonSize,
+                        menuIconSizeDp = iconSizeDp,
+                        activeContainerColor = colors.activeContainerColor,
+                        activeContentColor = colors.activeContentColor,
+                        contentColor = colors.contentColor
+                    )
                 }
-                ExpandedTarget.CONTEXT_ONLY -> {
-                    Box(
-                        modifier = Modifier.padding(4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        ContextSubGroupContent(
-                            isHoriz = isSubHoriz,
-                            screenGrab = screenGrab,
-                            onScreenGrabChange = { settings.isScreenGrabActive = it },
-                            appTree = appTree,
-                            onAppTreeChange = { settings.isAppTreeActive = it },
-                            highlightedText = highlightedText,
-                            onHighlightedTextChange = { settings.isHighlightedTextActive = it },
-                            media = media,
-                            onMediaChange = { settings.isMediaActive = it },
-                            onSelectAllContext = { onSelectAllContext(); settings.isScreenGrabActive = true; settings.isAppTreeActive = true; settings.isHighlightedTextActive = true; settings.isMediaActive = true },
-                            onSelectNoneContext = { onSelectNoneContext(); settings.isScreenGrabActive = false; settings.isAppTreeActive = false; settings.isHighlightedTextActive = false; settings.isMediaActive = false },
-                            menuButtonSize = menuButtonSize,
-                            menuIconSizeDp = menuIconSizeDp,
-                            activeContainerColor = colors.activeContainerColor,
-                            activeContentColor = colors.activeContentColor,
-                            contentColor = colors.contentColor
-                        )
-                    }
+            } else {
+                // Vertical sub-items -> Place subgroups side-by-side in a Row (2x6 grid)
+                Row(
+                    modifier = Modifier
+                        .height(IntrinsicSize.Min)
+                        .padding(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    InputSubGroupContent(
+                        isHoriz = false,
+                        pointActive = pointActive,
+                        activeSelection = activeSelection,
+                        buttonSize = buttonSize,
+                        iconSizeDp = iconSizeDp,
+                        contentColor = colors.contentColor,
+                        activeContainerColor = colors.activeContainerColor,
+                        activeContentColor = colors.activeContentColor,
+                        onInputSelected = onInputSelected
+                    )
+                    VerticalDivider(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .padding(vertical = 2.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    ContextSubGroupContent(
+                        isHoriz = false,
+                        screenGrab = screenGrab,
+                        onScreenGrabChange = { settings.isScreenGrabActive = it },
+                        appTree = appTree,
+                        onAppTreeChange = { settings.isAppTreeActive = it },
+                        highlightedText = highlightedText,
+                        onHighlightedTextChange = { settings.isHighlightedTextActive = it },
+                        media = media,
+                        onMediaChange = { settings.isMediaActive = it },
+                        onSelectAllContext = {
+                            onSelectAllContext()
+                            settings.isScreenGrabActive = true
+                            settings.isAppTreeActive = true
+                            settings.isHighlightedTextActive = true
+                            settings.isMediaActive = true
+                        },
+                        onSelectNoneContext = {
+                            onSelectNoneContext()
+                            settings.isScreenGrabActive = false
+                            settings.isAppTreeActive = false
+                            settings.isHighlightedTextActive = false
+                            settings.isMediaActive = false
+                        },
+                        menuButtonSize = buttonSize,
+                        menuIconSizeDp = iconSizeDp,
+                        activeContainerColor = colors.activeContainerColor,
+                        activeContentColor = colors.activeContentColor,
+                        contentColor = colors.contentColor
+                    )
                 }
-                ExpandedTarget.JOINED_BOTH -> {
-                    if (isSubHoriz) {
-                        // Horizontal sub-items -> Stack subgroups vertically in a Column
-                        Column(
-                            modifier = Modifier
-                                .width(IntrinsicSize.Min)
-                                .padding(4.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            InputSubGroupContent(true, pointActive = pointActive, activeSelection = activeSelection, buttonSize = buttonSize, iconSizeDp = iconSizeDp, contentColor = colors.contentColor, activeContainerColor = colors.activeContainerColor, activeContentColor = colors.activeContentColor, onInputSelected = onInputSelected)
-                            HorizontalDivider(modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                            ContextSubGroupContent(true, screenGrab, { settings.isScreenGrabActive = it }, appTree, { settings.isAppTreeActive = it }, highlightedText, { settings.isHighlightedTextActive = it }, media, { settings.isMediaActive = it }, { onSelectAllContext(); settings.isScreenGrabActive = true; settings.isAppTreeActive = true; settings.isHighlightedTextActive = true; settings.isMediaActive = true }, { onSelectNoneContext(); settings.isScreenGrabActive = false; settings.isAppTreeActive = false; settings.isHighlightedTextActive = false; settings.isMediaActive = false }, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
-                        }
-                    } else {
-                        // Vertical sub-items -> Place subgroups side-by-side in a Row
-                        Row(
-                            modifier = Modifier
-                                .height(IntrinsicSize.Min)
-                                .padding(4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            InputSubGroupContent(false, pointActive = pointActive, activeSelection = activeSelection, buttonSize = buttonSize, iconSizeDp = iconSizeDp, contentColor = colors.contentColor, activeContainerColor = colors.activeContainerColor, activeContentColor = colors.activeContentColor, onInputSelected = onInputSelected)
-                            VerticalDivider(modifier = Modifier.fillMaxHeight().padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                            ContextSubGroupContent(false, screenGrab, { settings.isScreenGrabActive = it }, appTree, { settings.isAppTreeActive = it }, highlightedText, { settings.isHighlightedTextActive = it }, media, { settings.isMediaActive = it }, { onSelectAllContext(); settings.isScreenGrabActive = true; settings.isAppTreeActive = true; settings.isHighlightedTextActive = true; settings.isMediaActive = true }, { onSelectNoneContext(); settings.isScreenGrabActive = false; settings.isAppTreeActive = false; settings.isHighlightedTextActive = false; settings.isMediaActive = false }, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
-                        }
-                    }
-                }
-                ExpandedTarget.NONE -> {}
             }
         }
     }
@@ -1082,6 +1248,61 @@ fun resolveToolbarColors(
 
 data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
+/**
+ * Custom drop shadow modifier that clips out the shape interior.
+ * When the surface has transparency/alpha, the shadow will NOT bleed or darken
+ * the translucent interior, keeping transparency crystal clear while rendering
+ * a realistic ambient and spot drop shadow outside the shape.
+ */
+fun Modifier.cleanDropShadow(
+    shape: Shape,
+    elevation: Dp,
+    shadowColor: Color = Color.Black
+): Modifier = if (elevation <= 0.dp) this else this.drawBehind {
+    val elevPx = elevation.toPx()
+    if (elevPx <= 0f) return@drawBehind
+
+    val shapeOutline = shape.createOutline(size, layoutDirection, this)
+    val shapePath = Path().apply {
+        addOutline(shapeOutline)
+    }
+    val androidPath = shapePath.asAndroidPath()
+
+    drawIntoCanvas { canvas ->
+        val nativeCanvas = canvas.nativeCanvas
+
+        nativeCanvas.save()
+        // Clip out the interior of the shape using Difference so shadow is strictly outside
+        canvas.clipPath(shapePath, ClipOp.Difference)
+
+        // 1. Ambient shadow (soft, centered)
+        val ambientBlur = (elevPx * 1.5f).coerceAtLeast(1f)
+        val ambientAlpha = (0.08f + 0.02f * (elevPx / 4f)).coerceIn(0.04f, 0.18f)
+        val ambientPaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            color = shadowColor.copy(alpha = ambientAlpha).toArgb()
+            maskFilter = BlurMaskFilter(ambientBlur, BlurMaskFilter.Blur.NORMAL)
+        }
+        nativeCanvas.drawPath(androidPath, ambientPaint)
+
+        // 2. Spot shadow (directional, slight downward offset)
+        val spotBlur = (elevPx * 2.2f).coerceAtLeast(1f)
+        val spotDy = (elevPx * 0.75f).coerceAtLeast(0.5f)
+        val spotAlpha = (0.12f + 0.03f * (elevPx / 4f)).coerceIn(0.06f, 0.28f)
+        val spotPaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            color = shadowColor.copy(alpha = spotAlpha).toArgb()
+            maskFilter = BlurMaskFilter(spotBlur, BlurMaskFilter.Blur.NORMAL)
+        }
+        nativeCanvas.save()
+        nativeCanvas.translate(0f, spotDy)
+        nativeCanvas.drawPath(androidPath, spotPaint)
+        nativeCanvas.restore()
+
+        nativeCanvas.restore()
+    }
+}
+
 @Composable
 fun ToolbarLayoutEngine(
     baseLayout: String,
@@ -1146,12 +1367,17 @@ fun ToolbarLayoutEngine(
     }
 
     val baseContent: @Composable () -> Unit = {
+        val previewBaseShape = RoundedCornerShape(20.dp)
         Surface(
-            shape = RoundedCornerShape(20.dp),
+            shape = previewBaseShape,
             color = colors.containerColor,
             tonalElevation = tonalElevation,
-            shadowElevation = shadowElevation,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            shadowElevation = 0.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+            modifier = Modifier.cleanDropShadow(
+                shape = previewBaseShape,
+                elevation = shadowElevation
+            )
         ) {
             if (isAllIcons) {
                 val isInputFirst = resolveAllIconsOrder(
@@ -1319,82 +1545,99 @@ fun ToolbarLayoutEngine(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
             modifier = Modifier.padding(2.dp)
         ) {
-            when (expandedTarget) {
-                ExpandedTarget.INPUT_ONLY -> {
-                    Box(
-                        modifier = Modifier.padding(4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        InputSubGroupContent(
-                            isHoriz = isSubHoriz,
-                            pointActive = pointActive,
-                            activeSelection = activeSelection,
-                            buttonSize = buttonSize,
-                            iconSizeDp = iconSizeDp,
-                            contentColor = colors.contentColor,
-                            activeContainerColor = colors.activeContainerColor,
-                            activeContentColor = colors.activeContentColor,
-                            onInputSelected = onInputSubSelected
-                        )
-                    }
+            if (isSubHoriz) {
+                Column(
+                    modifier = Modifier
+                        .width(IntrinsicSize.Min)
+                        .padding(4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    InputSubGroupContent(
+                        isHoriz = true,
+                        pointActive = pointActive,
+                        activeSelection = activeSelection,
+                        buttonSize = buttonSize,
+                        iconSizeDp = iconSizeDp,
+                        contentColor = colors.contentColor,
+                        activeContainerColor = colors.activeContainerColor,
+                        activeContentColor = colors.activeContentColor,
+                        onInputSelected = onInputSubSelected
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 2.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    ContextSubGroupContent(
+                        isHoriz = true,
+                        screenGrab = screenGrab,
+                        onScreenGrabChange = onScreenGrabChange,
+                        appTree = appTree,
+                        onAppTreeChange = onAppTreeChange,
+                        highlightedText = highlightedText,
+                        onHighlightedTextChange = onHighlightedTextChange,
+                        media = media,
+                        onMediaChange = onMediaChange,
+                        onSelectAllContext = onSelectAllContext,
+                        onSelectNoneContext = onSelectNoneContext,
+                        menuButtonSize = buttonSize,
+                        menuIconSizeDp = iconSizeDp,
+                        activeContainerColor = colors.activeContainerColor,
+                        activeContentColor = colors.activeContentColor,
+                        contentColor = colors.contentColor
+                    )
                 }
-                ExpandedTarget.CONTEXT_ONLY -> {
-                    Box(
-                        modifier = Modifier.padding(4.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        ContextSubGroupContent(
-                            isHoriz = isSubHoriz,
-                            screenGrab = screenGrab,
-                            onScreenGrabChange = onScreenGrabChange,
-                            appTree = appTree,
-                            onAppTreeChange = onAppTreeChange,
-                            highlightedText = highlightedText,
-                            onHighlightedTextChange = onHighlightedTextChange,
-                            media = media,
-                            onMediaChange = onMediaChange,
-                            onSelectAllContext = onSelectAllContext,
-                            onSelectNoneContext = onSelectNoneContext,
-                            menuButtonSize = menuButtonSize,
-                            menuIconSizeDp = menuIconSizeDp,
-                            activeContainerColor = colors.activeContainerColor,
-                            activeContentColor = colors.activeContentColor,
-                            contentColor = colors.contentColor
-                        )
-                    }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .height(IntrinsicSize.Min)
+                        .padding(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    InputSubGroupContent(
+                        isHoriz = false,
+                        pointActive = pointActive,
+                        activeSelection = activeSelection,
+                        buttonSize = buttonSize,
+                        iconSizeDp = iconSizeDp,
+                        contentColor = colors.contentColor,
+                        activeContainerColor = colors.activeContainerColor,
+                        activeContentColor = colors.activeContentColor,
+                        onInputSelected = onInputSubSelected
+                    )
+                    VerticalDivider(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .padding(vertical = 2.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    ContextSubGroupContent(
+                        isHoriz = false,
+                        screenGrab = screenGrab,
+                        onScreenGrabChange = onScreenGrabChange,
+                        appTree = appTree,
+                        onAppTreeChange = onAppTreeChange,
+                        highlightedText = highlightedText,
+                        onHighlightedTextChange = onHighlightedTextChange,
+                        media = media,
+                        onMediaChange = onMediaChange,
+                        onSelectAllContext = onSelectAllContext,
+                        onSelectNoneContext = onSelectNoneContext,
+                        menuButtonSize = buttonSize,
+                        menuIconSizeDp = iconSizeDp,
+                        activeContainerColor = colors.activeContainerColor,
+                        activeContentColor = colors.activeContentColor,
+                        contentColor = colors.contentColor
+                    )
                 }
-                ExpandedTarget.JOINED_BOTH -> {
-                    if (isSubHoriz) {
-                        Column(
-                            modifier = Modifier
-                                .width(IntrinsicSize.Min)
-                                .padding(4.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            InputSubGroupContent(true, pointActive = pointActive, activeSelection = activeSelection, buttonSize = buttonSize, iconSizeDp = iconSizeDp, contentColor = colors.contentColor, activeContainerColor = colors.activeContainerColor, activeContentColor = colors.activeContentColor, onInputSelected = onInputSubSelected)
-                            HorizontalDivider(modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                            ContextSubGroupContent(true, screenGrab, onScreenGrabChange, appTree, onAppTreeChange, highlightedText, onHighlightedTextChange, media, onMediaChange, onSelectAllContext, onSelectNoneContext, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .height(IntrinsicSize.Min)
-                                .padding(4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            InputSubGroupContent(false, pointActive = pointActive, activeSelection = activeSelection, buttonSize = buttonSize, iconSizeDp = iconSizeDp, contentColor = colors.contentColor, activeContainerColor = colors.activeContainerColor, activeContentColor = colors.activeContentColor, onInputSelected = onInputSubSelected)
-                            VerticalDivider(modifier = Modifier.fillMaxHeight().padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                            ContextSubGroupContent(false, screenGrab, onScreenGrabChange, appTree, onAppTreeChange, highlightedText, onHighlightedTextChange, media, onMediaChange, onSelectAllContext, onSelectNoneContext, menuButtonSize, menuIconSizeDp, colors.activeContainerColor, colors.activeContentColor, colors.contentColor)
-                        }
-                    }
-                }
-                ExpandedTarget.NONE -> {}
             }
         }
     }
 
+    val density = LocalDensity.current.density
     Layout(
         content = {
             Box(modifier = Modifier.layoutId("base")) { baseContent() }
@@ -1415,6 +1658,7 @@ fun ToolbarLayoutEngine(
         val subW = if (isExpanded) (subPlaceable?.width ?: 0) else 0
         val subH = if (isExpanded) (subPlaceable?.height ?: 0) else 0
 
+        val gapPx = (16 * density).toInt()
         val placement = calculateSubPlacement(
             baseAnchorX = 0,
             baseAnchorY = 0,
@@ -1431,7 +1675,7 @@ fun ToolbarLayoutEngine(
             subAlignModifier = subAlignModifier,
             expandedTarget = expandedTarget,
             stayOnScreen = false,
-            gapPx = 16,
+            gapPx = gapPx,
             screenMargin = 0
         )
 

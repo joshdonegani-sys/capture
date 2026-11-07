@@ -42,8 +42,13 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
+import android.view.inputmethod.InputMethodManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.Column
@@ -57,6 +62,9 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -403,9 +411,24 @@ fun InputBottomSheet(
     val screenHeightPx = with(density) { screenHeightDp.toPx() }
     val coroutineScope = rememberCoroutineScope()
 
+    // Dynamic inset and layout calculations
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    val imeBottomDp = with(density) { imeBottomPx.toDp() }
+    val statusBarTopPx = WindowInsets.statusBars.getTop(density)
+    val statusBarTopDp = with(density) { statusBarTopPx.toDp() }
+
+    val topSafetyMarginDp = statusBarTopDp.coerceAtLeast(36.dp)
+    val horizontalPadding = 24.dp
+    val nonContentHeightDp = horizontalPadding +
+            (if (showInputTypeTabs) 56.dp else 0.dp) +
+            (if (activeSharedText != null && activeAttachment != null) 108.dp else if (activeSharedText != null || activeAttachment != null) 54.dp else 0.dp) +
+            16.dp + 48.dp + 16.dp
+
+    val availableContentHeightDp = (screenHeightDp - imeBottomDp - topSafetyMarginDp - nonContentHeightDp).coerceAtLeast(90.dp)
+
     // Dimensions for Short and Tall heights
-    val shortContentHeightPx = with(density) { 130.dp.toPx() }
-    val tallContentHeightPx = with(density) { ((screenHeightDp * 0.52f).coerceAtLeast(360.dp)).toPx() }
+    val shortContentHeightPx = with(density) { 130.dp.coerceAtMost(availableContentHeightDp).toPx() }
+    val tallContentHeightPx = with(density) { minOf(screenHeightDp * 0.52f, availableContentHeightDp).toPx() }
 
     // Dynamic content height animatable: tracks touch drags between short and tall
     val contentHeightPxAnim = remember { Animatable(shortContentHeightPx) }
@@ -413,8 +436,22 @@ fun InputBottomSheet(
     val sheetTranslationY = remember { Animatable(screenHeightPx) }
     var isDismissing by remember { mutableStateOf(false) }
 
-    // Current content height exposed to children composables
+    // Synchronize content height when keyboard opens/closes while in fullscreen
+    LaunchedEffect(tallContentHeightPx, isFullscreen) {
+        if (isFullscreen && contentHeightPxAnim.value > tallContentHeightPx) {
+            contentHeightPxAnim.animateTo(
+                targetValue = tallContentHeightPx,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+        }
+    }
+
+    // Current content height exposed to children composables, strictly bounded by available height
     val animatedContentHeightDp = with(density) { contentHeightPxAnim.value.toDp() }
+    val effectiveContentHeightDp = animatedContentHeightDp.coerceIn(80.dp, availableContentHeightDp)
 
     // Start slide-up entrance animation immediately on launch: smooth FastOutSlowInEasing
     LaunchedEffect(Unit) {
@@ -424,10 +461,25 @@ fun InputBottomSheet(
         )
     }
 
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val composeView = LocalView.current
+
     // Dismiss with smooth slide-down animation
     fun dismissSheet(onComplete: () -> Unit = onDismiss) {
         if (isDismissing) return
         isDismissing = true
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        try {
+            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(composeView.windowToken, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                composeView.windowInsetsController?.hide(android.view.WindowInsets.Type.ime())
+            }
+        } catch (e: Exception) {
+            Log.e("InputBottomSheet", "Error hiding keyboard on dismiss", e)
+        }
         coroutineScope.launch {
             sheetTranslationY.animateTo(
                 targetValue = screenHeightPx,
@@ -597,32 +649,34 @@ fun InputBottomSheet(
             color = MaterialTheme.colorScheme.surfaceContainer,
             tonalElevation = 8.dp
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp)
-            ) {
-                // Drag handle area with vertical drag gestures (swipe up for full screen, swipe down for short/dismiss)
-                Box(
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val localMaxContentHeightDp = (maxHeight - topSafetyMarginDp - nonContentHeightDp).coerceAtLeast(80.dp)
+                val finalContentHeightDp = minOf(effectiveContentHeightDp, localMaxContentHeightDp)
+
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(22.dp)
-                        .then(dragGestureModifier),
-                    contentAlignment = Alignment.Center
+                        .padding(start = horizontalPadding, end = horizontalPadding, top = 0.dp, bottom = 16.dp)
                 ) {
+                    // Drag handle area with vertical drag gestures (swipe up for full screen, swipe down for short/dismiss)
                     Box(
                         modifier = Modifier
-                            .width(32.dp)
-                            .height(4.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.outlineVariant)
-                    )
-                }
+                            .fillMaxWidth()
+                            .height(horizontalPadding)
+                            .then(dragGestureModifier),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(32.dp)
+                                .height(4.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.outlineVariant)
+                        )
+                    }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // M3 Single-Select Segmented Buttons with proper outlineVariant border
-                if (showInputTypeTabs) {
+                    // M3 Single-Select Segmented Buttons with proper outlineVariant border
+                    if (showInputTypeTabs) {
                     val segmentedBorder = SegmentedButtonDefaults.borderStroke(
                         color = MaterialTheme.colorScheme.outlineVariant
                     )
@@ -639,6 +693,8 @@ fun InputBottomSheet(
                             onClick = {
                                 selectedTabIndex = 0
                                 settings.lastUsedInputType = "speech_to_text"
+                                focusManager.clearFocus(force = true)
+                                keyboardController?.hide()
                                 if (isAudioRecording) stopAudioRecording()
                                 if (!isVoiceListening) startListening()
                             },
@@ -659,6 +715,8 @@ fun InputBottomSheet(
                             onClick = {
                                 selectedTabIndex = 1
                                 settings.lastUsedInputType = "mic_audio"
+                                focusManager.clearFocus(force = true)
+                                keyboardController?.hide()
                                 if (isVoiceListening) stopListening()
                                 if (!isAudioRecording) startAudioRecording()
                             },
@@ -814,14 +872,14 @@ fun InputBottomSheet(
                             MicrophonePermissionCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(animatedContentHeightDp),
+                                    .height(finalContentHeightDp),
                                 onRequestPermission = requestPermissionAction
                             )
                         } else {
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(animatedContentHeightDp),
+                                    .height(finalContentHeightDp),
                                 shape = RoundedCornerShape(16.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
@@ -938,14 +996,14 @@ fun InputBottomSheet(
                             MicrophonePermissionCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(animatedContentHeightDp),
+                                    .height(finalContentHeightDp),
                                 onRequestPermission = requestPermissionAction
                             )
                         } else {
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(animatedContentHeightDp),
+                                    .height(finalContentHeightDp),
                                 shape = RoundedCornerShape(16.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
@@ -1080,7 +1138,7 @@ fun InputBottomSheet(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(animatedContentHeightDp)
+                                .height(finalContentHeightDp)
                         ) {
                             OutlinedTextField(
                                 value = textInput,
@@ -1145,6 +1203,7 @@ fun InputBottomSheet(
             }
         }
     }
+}
 }
 
 @Composable

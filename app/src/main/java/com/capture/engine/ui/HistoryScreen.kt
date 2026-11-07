@@ -16,9 +16,11 @@ import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -47,11 +49,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.ShortText
 import androidx.compose.material.icons.filled.AppShortcut
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -74,6 +79,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -125,6 +131,7 @@ import com.capture.engine.model.DeliveryStatus
 import com.capture.engine.model.MediaContext
 import com.capture.engine.network.WebhookClient
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
@@ -157,6 +164,89 @@ fun shareJsonFile(context: Context, filename: String, jsonContent: String) {
         Log.e("HistoryScreen", "Error sharing JSON file", e)
         Toast.makeText(context, "Error sharing file: ${e.message}", Toast.LENGTH_SHORT).show()
     }
+}
+
+fun shareMultipleJsonFiles(context: Context, items: List<CaptureEntity>) {
+    if (items.isEmpty()) return
+    try {
+        val shareDir = File(context.cacheDir, "shared_captures")
+        if (!shareDir.exists()) {
+            shareDir.mkdirs()
+        }
+        val fileDateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+        val uris = ArrayList<Uri>()
+        items.forEach { item ->
+            val filename = "capture_${fileDateFormat.format(Date(item.timestamp))}_${item.id}.json"
+            val file = File(shareDir, filename)
+            file.writeText(item.getRawJson(context), Charsets.UTF_8)
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            uris.add(uri)
+        }
+
+        val sendIntent = if (uris.size == 1) {
+            Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"
+                putExtra(Intent.EXTRA_STREAM, uris[0])
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        } else {
+            Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                type = "application/json"
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+        context.startActivity(Intent.createChooser(sendIntent, "Share ${items.size} Captures"))
+    } catch (e: Exception) {
+        Log.e("HistoryScreen", "Error sharing JSON files", e)
+        Toast.makeText(context, "Error sharing files: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun saveMultipleJsonToDownloads(context: Context, items: List<CaptureEntity>): Boolean {
+    if (items.isEmpty()) return false
+    val fileDateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+    var successCount = 0
+    items.forEach { item ->
+        val filename = "capture_${fileDateFormat.format(Date(item.timestamp))}_${item.id}.json"
+        if (saveJsonToDownloads(context, filename, item.getRawJson(context))) {
+            successCount++
+        }
+    }
+    if (successCount == items.size) {
+        Toast.makeText(context, "Saved $successCount capture${if (successCount > 1) "s" else ""} to Downloads", Toast.LENGTH_LONG).show()
+    } else {
+        Toast.makeText(context, "Saved $successCount of ${items.size} captures to Downloads", Toast.LENGTH_SHORT).show()
+    }
+    return successCount > 0
+}
+
+fun copyMultipleJsonToClipboard(context: Context, items: List<CaptureEntity>) {
+    if (items.isEmpty()) return
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+    val jsonContent = if (items.size == 1) {
+        items.first().getRawJson(context)
+    } else {
+        val parsedList = items.map { item ->
+            try {
+                Gson().fromJson(item.getRawJson(context), Any::class.java)
+            } catch (e: Exception) {
+                item.getRawJson(context)
+            }
+        }
+        GsonBuilder().setPrettyPrinting().create().toJson(parsedList)
+    }
+    val clip = ClipData.newPlainText("Capture Payload JSON", jsonContent)
+    clipboard?.setPrimaryClip(clip)
+    Toast.makeText(
+        context,
+        if (items.size == 1) "JSON copied to clipboard" else "${items.size} captures copied to clipboard",
+        Toast.LENGTH_SHORT
+    ).show()
 }
 
 fun getAppName(context: Context, packageName: String?): String? {
@@ -197,6 +287,15 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
 
     val captures by dao.getAllCapturesFlow().collectAsState(initial = emptyList())
 
+    // Selection mode state
+    var isSelectMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<Long>()) }
+
+    BackHandler(enabled = isSelectMode) {
+        isSelectMode = false
+        selectedIds = emptySet()
+    }
+
     // Filters
     var selectedTypeFilter by remember { mutableStateOf<String?>(null) }
     var filterScreenGrabOnly by remember { mutableStateOf(false) }
@@ -216,11 +315,149 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                 (!filterShareOnly || capture.hasShareContext)
     }
 
+    val selectedCaptures = remember(captures, selectedIds) {
+        captures.filter { it.id in selectedIds }
+    }
+
+    val hasErrorsInSelection = remember(selectedCaptures) {
+        selectedCaptures.any { it.status == DeliveryStatus.ERROR }
+    }
+    val hasSuccessInSelection = remember(selectedCaptures) {
+        selectedCaptures.any { it.status == DeliveryStatus.SUCCESS }
+    }
+
+    val onBulkDownload: (List<CaptureEntity>) -> Unit = { items ->
+        saveMultipleJsonToDownloads(context, items)
+    }
+
+    val onBulkCopy: (List<CaptureEntity>) -> Unit = { items ->
+        copyMultipleJsonToClipboard(context, items)
+    }
+
+    val onBulkShare: (List<CaptureEntity>) -> Unit = { items ->
+        shareMultipleJsonFiles(context, items)
+    }
+
+    val onBulkDelete: (List<CaptureEntity>) -> Unit = { items ->
+        scope.launch(Dispatchers.IO) {
+            items.forEach { item ->
+                try {
+                    val file = File(item.payloadFilePath)
+                    if (file.exists()) file.delete()
+                } catch (e: Exception) {}
+                dao.deleteById(item.id)
+            }
+        }
+        Toast.makeText(context, "${items.size} capture${if (items.size > 1) "s" else ""} deleted", Toast.LENGTH_SHORT).show()
+        selectedIds = emptySet()
+        isSelectMode = false
+    }
+
+    val onBulkRetryOrResend: (List<CaptureEntity>, DeliveryStatus?) -> Unit = { items, targetStatus ->
+        val targets = if (targetStatus != null) items.filter { it.status == targetStatus } else items
+        if (targets.isNotEmpty()) {
+            scope.launch(Dispatchers.IO) {
+                val client = WebhookClient()
+                targets.forEach { item ->
+                    dao.update(item.copy(status = DeliveryStatus.SENDING))
+                }
+                targets.forEach { item ->
+                    val result = client.sendPayload(
+                        url = settings.webhookUrl,
+                        jsonPayload = item.getRawJson(context),
+                        apiKey = settings.apiKey.ifBlank { null }
+                    )
+                    dao.update(
+                        item.copy(
+                            status = if (result.isSuccess) DeliveryStatus.SUCCESS else DeliveryStatus.ERROR,
+                            responseCode = result.statusCode,
+                            responseTimeMs = result.responseTimeMs,
+                            errorMessage = result.errorMessage,
+                            retryCount = item.retryCount + 1
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 16.dp)
     ) {
+        // Selection Mode Action Bar
+        AnimatedVisibility(visible = isSelectMode) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        IconButton(onClick = {
+                            isSelectMode = false
+                            selectedIds = emptySet()
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Exit selection")
+                        }
+                        Text(
+                            text = "${selectedIds.size} selected",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        TextButton(
+                            onClick = {
+                                if (selectedIds.size == filteredCaptures.size) {
+                                    selectedIds = emptySet()
+                                } else {
+                                    selectedIds = filteredCaptures.map { it.id }.toSet()
+                                }
+                            }
+                        ) {
+                            Text(
+                                text = if (selectedIds.size == filteredCaptures.size && filteredCaptures.isNotEmpty()) "Deselect All" else "Select All",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+
+                        if (selectedIds.isNotEmpty()) {
+                            IconButton(onClick = { onBulkCopy(selectedCaptures) }) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy selected", modifier = Modifier.size(20.dp))
+                            }
+                            IconButton(onClick = { onBulkShare(selectedCaptures) }) {
+                                Icon(Icons.Default.Share, contentDescription = "Share selected", modifier = Modifier.size(20.dp))
+                            }
+                            IconButton(onClick = { onBulkDownload(selectedCaptures) }) {
+                                Icon(Icons.Default.Download, contentDescription = "Download selected", modifier = Modifier.size(20.dp))
+                            }
+                            IconButton(onClick = { onBulkDelete(selectedCaptures) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete selected", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Filter Chips Row
         Row(
             modifier = Modifier
@@ -304,39 +541,55 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(filteredCaptures, key = { it.id }) { item ->
+                    val isSelected = selectedIds.contains(item.id)
                     CaptureItemCard(
                         item = item,
+                        isSelectMode = isSelectMode,
+                        isSelected = isSelected,
+                        selectedCount = selectedIds.size,
+                        onToggleSelect = {
+                            selectedIds = if (isSelected) selectedIds - item.id else selectedIds + item.id
+                        },
+                        onEnterSelectMode = {
+                            isSelectMode = true
+                            selectedIds = setOf(item.id)
+                        },
                         onOpenFullscreen = { inspectingCaptureItem = item },
                         onRetry = {
-                            scope.launch(Dispatchers.IO) {
-                                val client = WebhookClient()
-                                dao.update(item.copy(status = DeliveryStatus.SENDING))
-                                val result = client.sendPayload(
-                                    url = settings.webhookUrl,
-                                    jsonPayload = item.getRawJson(context),
-                                    apiKey = settings.apiKey.ifBlank { null }
-                                )
-                                dao.update(
-                                    item.copy(
-                                        status = if (result.isSuccess) DeliveryStatus.SUCCESS else DeliveryStatus.ERROR,
-                                        responseCode = result.statusCode,
-                                        responseTimeMs = result.responseTimeMs,
-                                        errorMessage = result.errorMessage,
-                                        retryCount = item.retryCount + 1
-                                    )
-                                )
-                            }
+                            onBulkRetryOrResend(listOf(item), DeliveryStatus.ERROR)
+                        },
+                        onResend = {
+                            onBulkRetryOrResend(listOf(item), DeliveryStatus.SUCCESS)
                         },
                         onDelete = {
-                            scope.launch(Dispatchers.IO) {
-                                try {
-                                    val file = File(item.payloadFilePath)
-                                    if (file.exists()) file.delete()
-                                } catch (e: Exception) {}
-                                dao.deleteById(item.id)
-                            }
-                            Toast.makeText(context, "Capture deleted", Toast.LENGTH_SHORT).show()
-                        }
+                            onBulkDelete(listOf(item))
+                        },
+                        onBulkDownload = {
+                            val targets = if (selectedCaptures.isNotEmpty()) selectedCaptures else listOf(item)
+                            onBulkDownload(targets)
+                        },
+                        onBulkCopy = {
+                            val targets = if (selectedCaptures.isNotEmpty()) selectedCaptures else listOf(item)
+                            onBulkCopy(targets)
+                        },
+                        onBulkShare = {
+                            val targets = if (selectedCaptures.isNotEmpty()) selectedCaptures else listOf(item)
+                            onBulkShare(targets)
+                        },
+                        onBulkDelete = {
+                            val targets = if (selectedCaptures.isNotEmpty()) selectedCaptures else listOf(item)
+                            onBulkDelete(targets)
+                        },
+                        onBulkRetry = {
+                            val targets = if (selectedCaptures.isNotEmpty()) selectedCaptures else listOf(item)
+                            onBulkRetryOrResend(targets, DeliveryStatus.ERROR)
+                        },
+                        onBulkResend = {
+                            val targets = if (selectedCaptures.isNotEmpty()) selectedCaptures else listOf(item)
+                            onBulkRetryOrResend(targets, DeliveryStatus.SUCCESS)
+                        },
+                        hasErrorsInSelection = if (isSelectMode) hasErrorsInSelection else item.status == DeliveryStatus.ERROR,
+                        hasSuccessInSelection = if (isSelectMode) hasSuccessInSelection else item.status == DeliveryStatus.SUCCESS
                     )
                 }
             }
@@ -388,9 +641,23 @@ fun HistoryScreen(modifier: Modifier = Modifier) {
 @Composable
 fun CaptureItemCard(
     item: CaptureEntity,
+    isSelectMode: Boolean = false,
+    isSelected: Boolean = false,
+    selectedCount: Int = 0,
+    onToggleSelect: () -> Unit = {},
+    onEnterSelectMode: () -> Unit = {},
     onOpenFullscreen: () -> Unit,
     onRetry: () -> Unit,
-    onDelete: () -> Unit
+    onResend: () -> Unit = onRetry,
+    onDelete: () -> Unit,
+    onBulkDownload: () -> Unit = {},
+    onBulkCopy: () -> Unit = {},
+    onBulkShare: () -> Unit = {},
+    onBulkDelete: () -> Unit = {},
+    onBulkRetry: () -> Unit = {},
+    onBulkResend: () -> Unit = {},
+    hasErrorsInSelection: Boolean = false,
+    hasSuccessInSelection: Boolean = false
 ) {
     val context = LocalContext.current
     var showContextMenu by remember { mutableStateOf(false) }
@@ -404,12 +671,32 @@ fun CaptureItemCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .combinedClickable(
-                onClick = onOpenFullscreen,
-                onLongClick = { showContextMenu = true }
+                onClick = {
+                    if (isSelectMode) {
+                        onToggleSelect()
+                    } else {
+                        onOpenFullscreen()
+                    }
+                },
+                onLongClick = {
+                    if (isSelectMode) {
+                        if (!isSelected) {
+                            onToggleSelect()
+                        }
+                    }
+                    showContextMenu = true
+                }
             ),
         shape = RoundedCornerShape(16.dp),
+        border = if (isSelectMode && isSelected) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else null,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
+            containerColor = if (isSelectMode && isSelected) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            }
         )
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
@@ -418,7 +705,7 @@ fun CaptureItemCard(
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                // Header Row: Status Icon, App Title directly after icon, and formatted date + time (e.g. 28 Aug, HH:MM)
+                // Header Row: Checkbox (if in select mode), Status Icon, App Title directly after icon, and formatted date + time (e.g. 28 Aug, HH:MM)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -521,7 +808,7 @@ fun CaptureItemCard(
                         }
                     }
 
-                    if (item.status == DeliveryStatus.ERROR) {
+                    if (item.status == DeliveryStatus.ERROR && !isSelectMode) {
                         OutlinedButton(
                             onClick = onRetry,
                             shape = RoundedCornerShape(8.dp),
@@ -544,48 +831,132 @@ fun CaptureItemCard(
                 expanded = showContextMenu,
                 onDismissRequest = { showContextMenu = false }
             ) {
-                DropdownMenuItem(
-                    text = { Text("Download") },
-                    leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
-                    onClick = {
-                        showContextMenu = false
-                        val filename = "capture_${fileDateFormat.format(Date(item.timestamp))}.json"
-                        val success = saveJsonToDownloads(context, filename, item.getRawJson(context))
-                        if (success) {
-                            Toast.makeText(context, "Saved to Downloads: $filename", Toast.LENGTH_LONG).show()
-                        } else {
-                            Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
+                if (!isSelectMode) {
+                    DropdownMenuItem(
+                        text = { Text("Select") },
+                        leadingIcon = { Icon(Icons.Default.Checklist, contentDescription = null) },
+                        onClick = {
+                            showContextMenu = false
+                            onEnterSelectMode()
                         }
+                    )
+                    if (item.status == DeliveryStatus.ERROR) {
+                        DropdownMenuItem(
+                            text = { Text("Retry") },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                            onClick = {
+                                showContextMenu = false
+                                onRetry()
+                            }
+                        )
+                    } else if (item.status == DeliveryStatus.SUCCESS) {
+                        DropdownMenuItem(
+                            text = { Text("Resend") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null) },
+                            onClick = {
+                                showContextMenu = false
+                                onResend()
+                            }
+                        )
                     }
-                )
-                DropdownMenuItem(
-                    text = { Text("Copy") },
-                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
-                    onClick = {
-                        showContextMenu = false
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                        val clip = ClipData.newPlainText("Capture Payload JSON", item.getRawJson(context))
-                        clipboard?.setPrimaryClip(clip)
-                        Toast.makeText(context, "JSON copied to clipboard", Toast.LENGTH_SHORT).show()
+                    DropdownMenuItem(
+                        text = { Text("Download") },
+                        leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
+                        onClick = {
+                            showContextMenu = false
+                            val filename = "capture_${fileDateFormat.format(Date(item.timestamp))}.json"
+                            val success = saveJsonToDownloads(context, filename, item.getRawJson(context))
+                            if (success) {
+                                Toast.makeText(context, "Saved to Downloads: $filename", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Copy") },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                        onClick = {
+                            showContextMenu = false
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            val clip = ClipData.newPlainText("Capture Payload JSON", item.getRawJson(context))
+                            clipboard?.setPrimaryClip(clip)
+                            Toast.makeText(context, "JSON copied to clipboard", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Share") },
+                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                        onClick = {
+                            showContextMenu = false
+                            val filename = "capture_${fileDateFormat.format(Date(item.timestamp))}.json"
+                            shareJsonFile(context, filename, item.getRawJson(context))
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            showContextMenu = false
+                            onDelete()
+                        }
+                    )
+                } else {
+                    val countLabel = if (selectedCount > 1) " ($selectedCount)" else ""
+
+                    if (hasErrorsInSelection) {
+                        DropdownMenuItem(
+                            text = { Text("Retry failed$countLabel") },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                            onClick = {
+                                showContextMenu = false
+                                onBulkRetry()
+                            }
+                        )
                     }
-                )
-                DropdownMenuItem(
-                    text = { Text("Share") },
-                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
-                    onClick = {
-                        showContextMenu = false
-                        val filename = "capture_${fileDateFormat.format(Date(item.timestamp))}.json"
-                        shareJsonFile(context, filename, item.getRawJson(context))
+                    if (hasSuccessInSelection) {
+                        DropdownMenuItem(
+                            text = { Text("Resend$countLabel") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null) },
+                            onClick = {
+                                showContextMenu = false
+                                onBulkResend()
+                            }
+                        )
                     }
-                )
-                DropdownMenuItem(
-                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                    onClick = {
-                        showContextMenu = false
-                        onDelete()
-                    }
-                )
+                    DropdownMenuItem(
+                        text = { Text("Download$countLabel") },
+                        leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
+                        onClick = {
+                            showContextMenu = false
+                            onBulkDownload()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Copy$countLabel") },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                        onClick = {
+                            showContextMenu = false
+                            onBulkCopy()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Share$countLabel") },
+                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                        onClick = {
+                            showContextMenu = false
+                            onBulkShare()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete$countLabel", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            showContextMenu = false
+                            onBulkDelete()
+                        }
+                    )
+                }
             }
         }
     }
